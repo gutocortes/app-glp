@@ -1,5 +1,5 @@
-name: TirzeTrack 
-description: Aplicativo GLP-1
+name: tirzetrack
+description: Aplicativo TirzeTrack - Acompanhamento GLP-1
 publish_to: 'none'
 version: 1.0.0+1
 
