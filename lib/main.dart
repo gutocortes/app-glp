@@ -10,7 +10,7 @@ class HealthTrackApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Acompanhamento GLP-1',
+      title: 'TirzeTrack',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
@@ -19,13 +19,13 @@ class HealthTrackApp extends StatelessWidget {
           brightness: Brightness.light,
         ),
       ),
-      home: const MainNavigationScreen(),
+      home: const MainAppController(),
     );
   }
 }
 
 // -----------------------------------------------------------------------------
-// MODELOS DE DADOS E ESTADO GLOBAL
+// MODELOS DE DADOS
 // -----------------------------------------------------------------------------
 class UserProfile {
   String name;
@@ -34,20 +34,26 @@ class UserProfile {
   double height; // cm
   String gender; // 'Masculino' ou 'Feminino'
   String activityLevel;
+  bool isInitialSetupDone;
 
   UserProfile({
-    this.name = 'Usuário',
-    this.age = 30,
-    this.weight = 85.0,
-    this.height = 175.0,
+    this.name = '',
+    this.age = 0,
+    this.weight = 0.0,
+    this.height = 0.0,
     this.gender = 'Masculino',
     this.activityLevel = 'Moderado',
+    this.isInitialSetupDone = false,
   });
 
-  double get imc => weight / ((height / 100) * (height / 100));
+  double get imc {
+    if (height <= 0) return 0.0;
+    return weight / ((height / 100) * (height / 100));
+  }
 
   String get imcClassification {
     double val = imc;
+    if (val <= 0) return 'Não calculado';
     if (val < 18.5) return 'Abaixo do peso';
     if (val < 25.0) return 'Peso normal';
     if (val < 30.0) return 'Sobrepeso';
@@ -58,6 +64,7 @@ class UserProfile {
 
   // Cálculo da Taxa Metabólica Basal (Harris-Benedict)
   double get tbm {
+    if (weight <= 0 || height <= 0 || age <= 0) return 0.0;
     if (gender == 'Masculino') {
       return 88.36 + (13.4 * weight) + (4.8 * height) - (5.7 * age);
     } else {
@@ -103,10 +110,250 @@ class FoodItem {
 }
 
 // -----------------------------------------------------------------------------
-// NAVEGAÇÃO PRINCIPAL
+// CONTROLADOR PRINCIPAL
+// -----------------------------------------------------------------------------
+class MainAppController extends StatefulWidget {
+  const MainAppController({super.key});
+
+  @override
+  State<MainAppController> createState() => _MainAppControllerState();
+}
+
+class _MainAppControllerState extends State<MainAppController> {
+  final UserProfile profile = UserProfile();
+  int waterIntakeMl = 0;
+  final int waterGoalMl = 2500;
+  int consumedCalories = 0;
+
+  final List<InjectionLog> injectionLogs = [];
+  final List<WeightLog> weightLogs = [];
+
+  void _completeInitialSetup() {
+    setState(() {
+      profile.isInitialSetupDone = true;
+      if (profile.weight > 0) {
+        weightLogs.add(WeightLog(profile.weight, DateTime.now()));
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!profile.isInitialSetupDone) {
+      return OnboardingScreen(
+        profile: profile,
+        onComplete: _completeInitialSetup,
+      );
+    }
+
+    return MainNavigationScreen(
+      profile: profile,
+      waterIntakeMl: waterIntakeMl,
+      waterGoalMl: waterGoalMl,
+      consumedCalories: consumedCalories,
+      injectionLogs: injectionLogs,
+      weightLogs: weightLogs,
+      onUpdateWater: (val) => setState(() => waterIntakeMl = val),
+      onUpdateCalories: (val) => setState(() => consumedCalories = val),
+      onAddInjection: (log) => setState(() => injectionLogs.add(log)),
+      onAddWeight: (w) {
+        setState(() {
+          profile.weight = w;
+          weightLogs.add(WeightLog(w, DateTime.now()));
+        });
+      },
+    );
+  }
+}
+
+// -----------------------------------------------------------------------------
+// TELA DE CADASTRO INICIAL (ONBOARDING)
+// -----------------------------------------------------------------------------
+class OnboardingScreen extends StatefulWidget {
+  final UserProfile profile;
+  final VoidCallback onComplete;
+
+  const OnboardingScreen({
+    super.key,
+    required this.profile,
+    required this.onComplete,
+  });
+
+  @override
+  State<OnboardingScreen> createState() => _OnboardingScreenState();
+}
+
+class _OnboardingScreenState extends State<OnboardingScreen> {
+  final _formKey = GlobalKey<FormState>();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('TirzeTrack'),
+        centerTitle: true,
+      ),
+      body: Form(
+        key: _formKey,
+        child: ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            const Icon(Icons.health_and_safety, size: 70, color: Color(0xFF006C50)),
+            const SizedBox(height: 12),
+            const Text(
+              'Bem-vindo ao TirzeTrack',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Configure seu perfil inicial para calcularmos seu IMC e metas calóricas diárias.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey),
+            ),
+            const SizedBox(height: 24),
+            TextFormField(
+              decoration: const InputDecoration(
+                labelText: 'Seu Nome',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.person),
+              ),
+              validator: (v) => v == null || v.isEmpty ? 'Informe seu nome' : null,
+              onSaved: (val) => widget.profile.name = val ?? '',
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Idade',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.cake),
+                    ),
+                    validator: (v) => v == null || v.isEmpty ? 'Informe a idade' : null,
+                    onSaved: (val) => widget.profile.age = int.tryParse(val ?? '') ?? 0,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    value: widget.profile.gender,
+                    decoration: const InputDecoration(
+                      labelText: 'Sexo',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: ['Masculino', 'Feminino']
+                        .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+                        .toList(),
+                    onChanged: (val) {
+                      if (val != null) setState(() => widget.profile.gender = val);
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                      labelText: 'Peso Atual (kg)',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.monitor_weight),
+                    ),
+                    validator: (v) => v == null || v.isEmpty ? 'Informe o peso' : null,
+                    onSaved: (val) =>
+                        widget.profile.weight = double.tryParse(val?.replaceAll(',', '.') ?? '') ?? 0.0,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextFormField(
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                      labelText: 'Altura (cm)',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.height),
+                    ),
+                    validator: (v) => v == null || v.isEmpty ? 'Informe a altura' : null,
+                    onSaved: (val) =>
+                        widget.profile.height = double.tryParse(val?.replaceAll(',', '.') ?? '') ?? 0.0,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              value: widget.profile.activityLevel,
+              decoration: const InputDecoration(
+                labelText: 'Nível de Atividade Física',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.fitness_center),
+              ),
+              items: ['Sedentário', 'Leve', 'Moderado', 'Intenso']
+                  .map((a) => DropdownMenuItem(value: a, child: Text(a)))
+                  .toList(),
+              onChanged: (val) {
+                if (val != null) setState(() => widget.profile.activityLevel = val);
+              },
+            ),
+            const SizedBox(height: 28),
+            SizedBox(
+              height: 50,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF006C50),
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: () {
+                  if (_formKey.currentState!.validate()) {
+                    _formKey.currentState!.save();
+                    widget.onComplete();
+                  }
+                },
+                child: const Text('Salvar e Entrar no TirzeTrack', style: TextStyle(fontSize: 16)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// -----------------------------------------------------------------------------
+// NAVEGAÇÃO PRINCIPAL (DASHBOARD)
 // -----------------------------------------------------------------------------
 class MainNavigationScreen extends StatefulWidget {
-  const MainNavigationScreen({super.key});
+  final UserProfile profile;
+  final int waterIntakeMl;
+  final int waterGoalMl;
+  final int consumedCalories;
+  final List<InjectionLog> injectionLogs;
+  final List<WeightLog> weightLogs;
+
+  final Function(int) onUpdateWater;
+  final Function(int) onUpdateCalories;
+  final Function(InjectionLog) onAddInjection;
+  final Function(double) onAddWeight;
+
+  const MainNavigationScreen({
+    super.key,
+    required this.profile,
+    required this.waterIntakeMl,
+    required this.waterGoalMl,
+    required this.consumedCalories,
+    required this.injectionLogs,
+    required this.weightLogs,
+    required this.onUpdateWater,
+    required this.onUpdateCalories,
+    required this.onAddInjection,
+    required this.onAddWeight,
+  });
 
   @override
   State<MainNavigationScreen> createState() => _MainNavigationScreenState();
@@ -115,75 +362,37 @@ class MainNavigationScreen extends StatefulWidget {
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _currentIndex = 0;
 
-  // Estado Compartilhado
-  final UserProfile profile = UserProfile();
-  int waterIntakeMl = 1250;
-  final int waterGoalMl = 2500;
-  int consumedCalories = 850;
-
-  final List<InjectionLog> injectionLogs = [
-    InjectionLog(
-      medication: 'Tirzepatida',
-      dose: '2.5 mg',
-      site: 'Abdômen Direito',
-      date: DateTime.now().subtract(const Duration(days: 7)),
-    ),
-  ];
-
-  final List<WeightLog> weightLogs = [
-    WeightLog(90.0, DateTime.now().subtract(const Duration(days: 30))),
-    WeightLog(87.5, DateTime.now().subtract(const Duration(days: 15))),
-    WeightLog(85.0, DateTime.now()),
-  ];
-
   @override
   Widget build(BuildContext context) {
     final List<Widget> screens = [
       HomeScreen(
-        profile: profile,
-        waterIntake: waterIntakeMl,
-        waterGoal: waterGoalMl,
-        consumedCalories: consumedCalories,
-        lastInjection: injectionLogs.isNotEmpty ? injectionLogs.last : null,
+        profile: widget.profile,
+        waterIntake: widget.waterIntakeMl,
+        waterGoal: widget.waterGoalMl,
+        consumedCalories: widget.consumedCalories,
+        lastInjection: widget.injectionLogs.isNotEmpty ? widget.injectionLogs.last : null,
       ),
       InjectionsScreen(
-        logs: injectionLogs,
-        onAddLog: (log) {
-          setState(() {
-            injectionLogs.add(log);
-          });
-        },
+        logs: widget.injectionLogs,
+        onAddLog: widget.onAddInjection,
       ),
       NutritionScreen(
-        dailyGoal: profile.dailyCalories.round(),
-        consumedCalories: consumedCalories,
-        onAddCalories: (cals) {
-          setState(() {
-            consumedCalories += cals;
-          });
-        },
+        dailyGoal: widget.profile.dailyCalories.round(),
+        consumedCalories: widget.consumedCalories,
+        onAddCalories: (cals) => widget.onUpdateCalories(widget.consumedCalories + cals),
       ),
       WaterScreen(
-        currentWater: waterIntakeMl,
-        goalWater: waterGoalMl,
-        onAddWater: (amount) {
-          setState(() {
-            waterIntakeMl += amount;
-          });
-        },
+        currentWater: widget.waterIntakeMl,
+        goalWater: widget.waterGoalMl,
+        onAddWater: (amount) => widget.onUpdateWater(widget.waterIntakeMl + amount),
       ),
       EvolutionScreen(
-        weightLogs: weightLogs,
-        currentWeight: profile.weight,
-        onAddWeight: (w) {
-          setState(() {
-            profile.weight = w;
-            weightLogs.add(WeightLog(w, DateTime.now()));
-          });
-        },
+        weightLogs: widget.weightLogs,
+        currentWeight: widget.profile.weight,
+        onAddWeight: widget.onAddWeight,
       ),
       ProfileScreen(
-        profile: profile,
+        profile: widget.profile,
         onUpdate: () => setState(() {}),
       ),
     ];
@@ -228,7 +437,7 @@ class HomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Olá, ${profile.name}')),
+      appBar: AppBar(title: Text('TirzeTrack - Olá, ${profile.name}')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -272,7 +481,7 @@ class HomeScreen extends StatelessWidget {
               title: const Text('Última Aplicação'),
               subtitle: lastInjection != null
                   ? Text('${lastInjection!.medication} (${lastInjection!.dose}) - ${lastInjection!.site}')
-                  : const Text('Nenhuma aplicação registrada.'),
+                  : const Text('Nenhuma aplicação registrada ainda.'),
             ),
           ),
           const SizedBox(height: 12),
@@ -325,7 +534,7 @@ class HomeScreen extends StatelessWidget {
 }
 
 // -----------------------------------------------------------------------------
-// 2. TELA DE PERFIL / CADASTRO
+// 2. TELA DE PERFIL / EDIÇÃO
 // -----------------------------------------------------------------------------
 class ProfileScreen extends StatefulWidget {
   final UserProfile profile;
@@ -386,18 +595,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 Expanded(
                   child: TextFormField(
                     initialValue: widget.profile.weight.toString(),
-                    keyboardType: TextInputType.number,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     decoration: const InputDecoration(labelText: 'Peso (kg)', border: OutlineInputBorder()),
-                    onChanged: (val) => widget.profile.weight = double.tryParse(val) ?? widget.profile.weight,
+                    onChanged: (val) =>
+                        widget.profile.weight = double.tryParse(val.replaceAll(',', '.')) ?? widget.profile.weight,
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: TextFormField(
                     initialValue: widget.profile.height.toString(),
-                    keyboardType: TextInputType.number,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     decoration: const InputDecoration(labelText: 'Altura (cm)', border: OutlineInputBorder()),
-                    onChanged: (val) => widget.profile.height = double.tryParse(val) ?? widget.profile.height,
+                    onChanged: (val) =>
+                        widget.profile.height = double.tryParse(val.replaceAll(',', '.')) ?? widget.profile.height,
                   ),
                 ),
               ],
@@ -419,10 +630,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
               onPressed: () {
                 widget.onUpdate();
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Dados atualizados com sucesso!')),
+                  const SnackBar(content: Text('Perfil atualizado com sucesso!')),
                 );
               },
-              child: const Text('Salvar e Recalcular Metas'),
+              child: const Text('Salvar Alterações'),
             )
           ],
         ),
@@ -432,7 +643,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 }
 
 // -----------------------------------------------------------------------------
-// 3. TELA DE INJEÇÃO E MAPA CORPORAL
+// 3. TELA DE INJEÇÃO E MAPA CORPORAL CUSTOMIZADO
 // -----------------------------------------------------------------------------
 class InjectionsScreen extends StatefulWidget {
   final List<InjectionLog> logs;
@@ -484,25 +695,35 @@ class _InjectionsScreenState extends State<InjectionsScreen> {
             const Text('Selecione o Local de Aplicação:', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
 
-            // Mapa Corporal Visual Simplificado
+            // Mapa Corporal Visual com Gráfico + Silhueta + Injeção
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey.shade400),
-                borderRadius: BorderRadius.circular(12),
-                color: Colors.grey.shade50,
+                border: Border.all(color: Colors.grey.shade300),
+                borderRadius: BorderRadius.circular(16),
+                color: Colors.teal.shade50.withOpacity(0.3),
               ),
               child: Column(
                 children: [
-                  const Icon(Icons.accessibility_new, size: 100, color: Colors.teal),
+                  SizedBox(
+                    height: 120,
+                    width: 120,
+                    child: CustomPaint(
+                      painter: BodySyringeGraphPainter(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   Wrap(
                     spacing: 8,
                     runSpacing: 4,
+                    alignment: WrapAlignment.center,
                     children: sites.map((site) {
                       final isSelected = selectedSite == site;
                       return ChoiceChip(
                         label: Text(site),
                         selected: isSelected,
+                        selectedColor: const Color(0xFF006C50),
+                        labelStyle: TextStyle(color: isSelected ? Colors.white : Colors.black87),
                         onSelected: (sel) {
                           if (sel) setState(() => selectedSite = site);
                         },
@@ -519,7 +740,11 @@ class _InjectionsScreenState extends State<InjectionsScreen> {
               child: ElevatedButton.icon(
                 icon: const Icon(Icons.add),
                 label: const Text('Registrar Aplicação'),
-                style: ElevatedButton.styleFrom(padding: const EdgeInsets.all(16)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF006C50),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.all(16),
+                ),
                 onPressed: () {
                   final log = InjectionLog(
                     medication: selectedMed,
@@ -537,24 +762,90 @@ class _InjectionsScreenState extends State<InjectionsScreen> {
             const SizedBox(height: 24),
             const Text('Histórico de Aplicações', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
             const SizedBox(height: 8),
-            ListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: widget.logs.length,
-              itemBuilder: (context, index) {
-                final item = widget.logs.reversed.toList()[index];
-                return ListTile(
-                  leading: const Icon(Icons.check_circle, color: Colors.teal),
-                  title: Text('${item.medication} - ${item.dose}'),
-                  subtitle: Text('Local: ${item.site} | Data: ${item.date.day}/${item.date.month}/${item.date.year}'),
-                );
-              },
-            )
+            widget.logs.isEmpty
+                ? const Text('Nenhuma aplicação registrada.', style: TextStyle(color: Colors.grey))
+                : ListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: widget.logs.length,
+                    itemBuilder: (context, index) {
+                      final item = widget.logs.reversed.toList()[index];
+                      return ListTile(
+                        leading: const Icon(Icons.check_circle, color: Colors.teal),
+                        title: Text('${item.medication} - ${item.dose}'),
+                        subtitle: Text(
+                            'Local: ${item.site} | Data: ${item.date.day}/${item.date.month}/${item.date.year}'),
+                      );
+                    },
+                  )
           ],
         ),
       ),
     );
   }
+}
+
+// Custom Painter para desenhar Gráfico ao Fundo + Silhueta do Corpo + Seringa/Injeção
+class BodySyringeGraphPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final double w = size.width;
+    final double h = size.height;
+
+    // 1. Gráfico ao fundo (Linha de progresso)
+    final Paint graphPaint = Paint()
+      ..color = Colors.teal.withOpacity(0.3)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3;
+
+    final Path graphPath = Path()
+      ..moveTo(0, h * 0.7)
+      ..quadraticBezierTo(w * 0.25, h * 0.4, w * 0.5, h * 0.6)
+      ..quadraticBezierTo(w * 0.75, h * 0.8, w, h * 0.25);
+
+    canvas.drawPath(graphPath, graphPaint);
+
+    // 2. Silhueta do corpo (Centro)
+    final Paint bodyPaint = Paint()
+      ..color = const Color(0xFF006C50).withOpacity(0.85)
+      ..style = PaintingStyle.fill;
+
+    // Cabeça
+    canvas.drawCircle(Offset(w * 0.42, h * 0.22), w * 0.09, bodyPaint);
+
+    // Tronco e Pernas
+    final Path bodyPath = Path()
+      ..moveTo(w * 0.35, h * 0.33)
+      ..lineTo(w * 0.49, h * 0.33)
+      ..lineTo(w * 0.47, h * 0.65)
+      ..lineTo(w * 0.43, h * 0.90)
+      ..lineTo(w * 0.40, h * 0.90)
+      ..lineTo(w * 0.42, h * 0.65)
+      ..lineTo(w * 0.37, h * 0.65)
+      ..lineTo(w * 0.35, h * 0.90)
+      ..lineTo(w * 0.32, h * 0.90)
+      ..lineTo(w * 0.34, h * 0.65)
+      ..close();
+
+    canvas.drawPath(bodyPath, bodyPaint);
+
+    // 3. Seringa / Injeção (Sobreposta)
+    final Paint syringePaint = Paint()
+      ..color = Colors.teal.shade700
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3;
+
+    // Corpo da Seringa
+    canvas.drawRect(Rect.fromLTWH(w * 0.58, h * 0.35, w * 0.22, h * 0.12), syringePaint);
+    // Agulha
+    canvas.drawLine(Offset(w * 0.58, h * 0.41), Offset(w * 0.48, h * 0.41), syringePaint);
+    // Êmbolo
+    canvas.drawLine(Offset(w * 0.80, h * 0.41), Offset(w * 0.90, h * 0.41), syringePaint);
+    canvas.drawLine(Offset(w * 0.90, h * 0.36), Offset(w * 0.90, h * 0.46), syringePaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 // -----------------------------------------------------------------------------
@@ -607,7 +898,7 @@ class WaterScreen extends StatelessWidget {
 }
 
 // -----------------------------------------------------------------------------
-// 5. TELA DE NUTRITION / ALIMENTAÇÃO E FOTO IA
+// 5. TELA DE ALIMENTAÇÃO E FOTO IA
 // -----------------------------------------------------------------------------
 class NutritionScreen extends StatefulWidget {
   final int dailyGoal;
@@ -677,6 +968,8 @@ class _NutritionScreenState extends State<NutritionScreen> {
 
   @override
   Widget build(BuildContext context) {
+    double progress = widget.dailyGoal > 0 ? (widget.consumedCalories / widget.dailyGoal).clamp(0.0, 1.0) : 0.0;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Alimentação e Calorias')),
       body: ListView(
@@ -689,9 +982,7 @@ class _NutritionScreenState extends State<NutritionScreen> {
                 children: [
                   Text('Consumido: ${widget.consumedCalories} / ${widget.dailyGoal} kcal'),
                   const SizedBox(height: 8),
-                  LinearProgressIndicator(
-                    value: (widget.consumedCalories / widget.dailyGoal).clamp(0.0, 1.0),
-                  ),
+                  LinearProgressIndicator(value: progress),
                 ],
               ),
             ),
@@ -770,14 +1061,14 @@ class EvolutionScreen extends StatelessWidget {
               Expanded(
                 child: TextField(
                   controller: textController,
-                  keyboardType: TextInputType.number,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   decoration: const InputDecoration(labelText: 'Novo Peso (kg)', border: OutlineInputBorder()),
                 ),
               ),
               const SizedBox(width: 8),
               ElevatedButton(
                 onPressed: () {
-                  final val = double.tryParse(textController.text);
+                  final val = double.tryParse(textController.text.replaceAll(',', '.'));
                   if (val != null) {
                     onAddWeight(val);
                     textController.clear();
@@ -790,13 +1081,19 @@ class EvolutionScreen extends StatelessWidget {
           const SizedBox(height: 24),
           const Text('Histórico de Pesagem', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
           const SizedBox(height: 8),
-          ...weightLogs.reversed.map(
-            (log) => ListTile(
-              leading: const Icon(Icons.monitor_weight),
-              title: Text('${log.weight} kg'),
-              subtitle: Text('Data: ${log.date.day}/${log.date.month}/${log.date.year}'),
-            ),
-          ),
+          weightLogs.isEmpty
+              ? const Text('Nenhum histórico registrado ainda.', style: TextStyle(color: Colors.grey))
+              : Column(
+                  children: weightLogs.reversed
+                      .map(
+                        (log) => ListTile(
+                          leading: const Icon(Icons.monitor_weight),
+                          title: Text('${log.weight} kg'),
+                          subtitle: Text('Data: ${log.date.day}/${log.date.month}/${log.date.year}'),
+                        ),
+                      )
+                      .toList(),
+                ),
         ],
       ),
     );
