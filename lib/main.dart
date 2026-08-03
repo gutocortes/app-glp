@@ -76,7 +76,7 @@ class UserProfile {
 
   String get imcClassification {
     double val = imc;
-    if (val <= 0) return 'Não calculado';
+    if (val <= 0) return 'Não calculated';
     if (val < 18.5) return 'Abaixo do peso';
     if (val < 25.0) return 'Peso normal';
     if (val < 30.0) return 'Sobrepeso';
@@ -159,7 +159,7 @@ class WeightLog {
 }
 
 // -----------------------------------------------------------------------------
-// CONTROLADOR PRINCIPAL COM PERSISTÊNCIA REAL
+// CONTROLADOR PRINCIPAL
 // -----------------------------------------------------------------------------
 class MainAppController extends StatefulWidget {
   const MainAppController({super.key});
@@ -330,7 +330,7 @@ class _MainAppControllerState extends State<MainAppController> {
 }
 
 // -----------------------------------------------------------------------------
-// TELA DE LOGIN
+// TELA DE LOGIN (COM O SEU WEB CLIENT ID)
 // -----------------------------------------------------------------------------
 class LoginScreen extends StatefulWidget {
   final Function(GoogleSignInAccount account) onGoogleLoginSuccess;
@@ -347,7 +347,10 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final GoogleSignIn _googleSignIn = GoogleSignIn(scopes: ['email']);
+  final GoogleSignIn _googleSignIn = GoogleSignIn(
+    serverClientId: '166700276818-db15jrqtkuo0r2g1eiltha2cnsqmm2ac.apps.googleusercontent.com',
+    scopes: ['email', 'profile'],
+  );
   bool _isAuthenticating = false;
 
   Future<void> _handleGoogleSignIn() async {
@@ -368,7 +371,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Erro ao conectar Google: $error. Use a Conta Local se desejar.'),
+            content: Text('Erro ao conectar com Google ($error). Você pode usar a Conta Local.'),
             duration: const Duration(seconds: 4),
           ),
         );
@@ -768,7 +771,6 @@ class HomeScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16.0),
@@ -801,7 +803,6 @@ class HomeScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-
           Row(
             children: [
               Expanded(
@@ -842,9 +843,6 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
-// -----------------------------------------------------------------------------
-// REFEIÇÃO DINÂMICA
-// -----------------------------------------------------------------------------
 class NutritionScreen extends StatefulWidget {
   final int dailyGoal;
   final int consumedCalories;
@@ -963,9 +961,6 @@ class _NutritionScreenState extends State<NutritionScreen> {
   }
 }
 
-// -----------------------------------------------------------------------------
-// DEMAIS TELAS E PERFIL COM LOGOUT
-// -----------------------------------------------------------------------------
 class InjectionsScreen extends StatefulWidget {
   final List<InjectionLog> logs;
   final Function(InjectionLog) onAddLog;
