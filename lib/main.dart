@@ -20,11 +20,6 @@ class TirzeTrackApp extends StatelessWidget {
           seedColor: const Color(0xFF006C50),
           brightness: Brightness.light,
         ),
-        cardTheme: CardTheme(
-          elevation: 0,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          color: const Color(0xFFF2F5F3),
-        ),
         inputDecorationTheme: InputDecorationTheme(
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           filled: true,
@@ -46,7 +41,7 @@ class UserProfile {
   double height;
   String gender;
   String activityLevel;
-  int injectionIntervalDays; // Intervalo de dias entre injeções
+  int injectionIntervalDays;
   bool isInitialSetupDone;
   bool isLoggedIn;
 
@@ -69,7 +64,7 @@ class UserProfile {
 
   String get imcClassification {
     double val = imc;
-    if (val <= 0) return 'Não calculado';
+    if (val <= 0) return 'Não calculated';
     if (val < 18.5) return 'Abaixo do peso';
     if (val < 25.0) return 'Peso normal';
     if (val < 30.0) return 'Sobrepeso';
@@ -189,7 +184,7 @@ class _MainAppControllerState extends State<MainAppController> {
 }
 
 // -----------------------------------------------------------------------------
-// TELA DE LOGIN (MATERIAL DESIGN 3)
+// TELA DE LOGIN
 // -----------------------------------------------------------------------------
 class LoginScreen extends StatelessWidget {
   final VoidCallback onGoogleLogin;
@@ -230,7 +225,6 @@ class LoginScreen extends StatelessWidget {
                 style: theme.textTheme.bodyMedium?.copyWith(color: Colors.grey[700]),
               ),
               const Spacer(),
-              // Botão Entrar com Google
               FilledButton.icon(
                 style: FilledButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
@@ -524,7 +518,6 @@ class HomeScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // CARD CRONÔMETRO DA PRÓXIMA INJEÇÃO
           Card(
             color: theme.colorScheme.primaryContainer,
             child: Padding(
@@ -555,7 +548,6 @@ class HomeScreen extends StatelessWidget {
           ),
           const SizedBox(height: 12),
 
-          // RESUMO CALORIAS & IMC
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16.0),
@@ -579,7 +571,6 @@ class HomeScreen extends StatelessWidget {
           ),
           const SizedBox(height: 12),
 
-          // RESUMO NUTRIÇÃO E ÁGUA
           Row(
             children: [
               Expanded(
@@ -621,7 +612,7 @@ class HomeScreen extends StatelessWidget {
 }
 
 // -----------------------------------------------------------------------------
-// 2. TELA DE REGISTRO DE INJEÇÃO COM DATA/HORA AJUSTÁVEL
+// 2. TELA DE REGISTRO DE INJEÇÃO
 // -----------------------------------------------------------------------------
 class InjectionsScreen extends StatefulWidget {
   final List<InjectionLog> logs;
@@ -703,7 +694,6 @@ class _InjectionsScreenState extends State<InjectionsScreen> {
             ),
             const SizedBox(height: 16),
 
-            // SELEÇÃO MANUAR OU AUTOMÁTICA DE DATA E HORA
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(12),
@@ -800,7 +790,7 @@ class _InjectionsScreenState extends State<InjectionsScreen> {
 }
 
 // -----------------------------------------------------------------------------
-// 3. TELA DE ALIMENTAÇÃO COM FOTO REAL DA CÂMERA
+// 3. TELA DE ALIMENTAÇÃO COM FOTO REAL
 // -----------------------------------------------------------------------------
 class NutritionScreen extends StatefulWidget {
   final int dailyGoal;
@@ -898,7 +888,6 @@ class _NutritionScreenState extends State<NutritionScreen> {
           ),
           const SizedBox(height: 16),
 
-          // BOTÃO CÂMERA REAL
           FilledButton.icon(
             style: FilledButton.styleFrom(padding: const EdgeInsets.all(16)),
             icon: const Icon(Icons.camera_alt),
@@ -912,7 +901,7 @@ class _NutritionScreenState extends State<NutritionScreen> {
 }
 
 // -----------------------------------------------------------------------------
-// 4. TELA DE CONSUMO DE ÁGUA
+// 4. TELA DE ÁGUA
 // -----------------------------------------------------------------------------
 class WaterScreen extends StatelessWidget {
   final int currentWater;
@@ -955,7 +944,7 @@ class WaterScreen extends StatelessWidget {
 }
 
 // -----------------------------------------------------------------------------
-// 5. TELA DE EVOLUÇÃO E PERFIL
+// 5. EVOLUÇÃO E PERFIL
 // -----------------------------------------------------------------------------
 class EvolutionScreen extends StatelessWidget {
   final List<WeightLog> weightLogs;
