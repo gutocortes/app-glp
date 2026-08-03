@@ -1,4 +1,4 @@
-nname: tirzetrack
+name: tirzetrack
 description: "Aplicativo para acompanhamento de tratamento com GLP-1"
 publish_to: 'none'
 
@@ -15,7 +15,7 @@ dependencies:
   firebase_core: ^3.1.0
   firebase_auth: ^5.1.0
   shared_preferences: ^2.2.3
-  google_generative_ai: ^0.4.0 # <--- ADICIONE ESTA LINHA
+  google_generative_ai: ^0.4.0
 
 dev_dependencies:
   flutter_test:
