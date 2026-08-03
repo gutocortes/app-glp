@@ -37,7 +37,7 @@ class TirzeTrackApp extends StatelessWidget {
 }
 
 // -----------------------------------------------------------------------------
-// MODELOS DE DADOS E REGRA GLP-1
+// MODELOS DE DADOS
 // -----------------------------------------------------------------------------
 class UserProfile {
   String name;
@@ -158,7 +158,7 @@ class WeightLog {
 }
 
 // -----------------------------------------------------------------------------
-// CONTROLADOR PRINCIPAL COM PERSISTÊNCIA REAL
+// CONTROLADOR PRINCIPAL
 // -----------------------------------------------------------------------------
 class MainAppController extends StatefulWidget {
   const MainAppController({super.key});
@@ -329,7 +329,7 @@ class _MainAppControllerState extends State<MainAppController> {
 }
 
 // -----------------------------------------------------------------------------
-// TELA DE LOGIN (DUAS OPÇÕES FUNCIONAIS)
+// TELA DE LOGIN
 // -----------------------------------------------------------------------------
 class LoginScreen extends StatefulWidget {
   final Function(GoogleSignInAccount account) onGoogleLoginSuccess;
@@ -440,7 +440,7 @@ class _LoginScreenState extends State<LoginScreen> {
 }
 
 // -----------------------------------------------------------------------------
-// ONBOARDING (CONFIGURAÇÃO INICIAL)
+// ONBOARDING
 // -----------------------------------------------------------------------------
 class OnboardingScreen extends StatefulWidget {
   final UserProfile profile;
@@ -1017,7 +1017,7 @@ class _NutritionScreenState extends State<NutritionScreen> {
   final ImagePicker _picker = ImagePicker();
 
   final List<Map<String, dynamic>> _simulatedMeals = [
-    {'title': 'Prato Saúdavel com Proteína e Salada', 'calories': 380},
+    {'title': 'Prato Saudável com Proteína e Salada', 'calories': 380},
     {'title': 'Omelete com Legumes e Queijo Light', 'calories': 290},
     {'title': 'Grelhado de Frango com Arroz Integral', 'calories': 440},
     {'title': 'Sopa Leve de Legumes com Carne', 'calories': 250},
