@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "166700276818",
+    "project_id": "tizertrack",
+    "storage_bucket": "tizertrack.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:166700276818:android:29b5f8d658c3d3f152938b",
+        "android_client_info": {
+          "package_name": "com.example.tirzetrack"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "166700276818-db15jrqtkuo0r2g1eiltha2cnsqmm2ac.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.tirzetrack",
+            "certificate_hash": "3309a0bf3cbfc973e2ea81a6b4efd321a18e1f2a"
+          }
+        },
+        {
+          "client_id": "166700276818-m5en2oj2polmpclel60gdp6dtvdeu7as.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAi5GPAyudVS2pfeT0I3cRBJnS_Z82Roas"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "166700276818-m5en2oj2polmpclel60gdp6dtvdeu7as.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
