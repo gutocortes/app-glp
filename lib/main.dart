@@ -3,6 +3,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
+import 'dart:convert';
 import 'dart:math';
 
 void main() async {
@@ -20,15 +21,7 @@ class TirzeTrackApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF0061A4),
-          brightness: Brightness.light,
-        ),
-        inputDecorationTheme: InputDecorationTheme(
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-          filled: true,
-          fillColor: Colors.white,
-        ),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF0061A4), brightness: Brightness.light),
       ),
       home: const MainAppController(),
     );
@@ -36,1143 +29,155 @@ class TirzeTrackApp extends StatelessWidget {
 }
 
 // -----------------------------------------------------------------------------
-// MODELO DE PERFIL
+// MODELOS E PERSISTÊNCIA
 // -----------------------------------------------------------------------------
 class UserProfile {
-  String name;
-  String email;
-  String photoUrl;
-  int age;
-  double weight;
-  double height;
-  String gender;
-  String activityLevel;
-  String goal;
-  int injectionIntervalDays;
-  bool isInitialSetupDone;
-  bool isLoggedIn;
+  String name, email, photoUrl, gender, goal;
+  int age, injectionIntervalDays;
+  double weight, height;
+  bool isInitialSetupDone, isLoggedIn;
 
   UserProfile({
-    this.name = '',
-    this.email = '',
-    this.photoUrl = '',
-    this.age = 0,
-    this.weight = 0.0,
-    this.height = 0.0,
-    this.gender = 'Masculino',
-    this.activityLevel = 'Sedentário',
-    this.goal = 'Emagrecimento GLP-1',
-    this.injectionIntervalDays = 7,
-    this.isInitialSetupDone = false,
-    this.isLoggedIn = false,
+    this.name = '', this.email = '', this.photoUrl = '', this.age = 0,
+    this.weight = 0.0, this.height = 0.0, this.gender = 'Masculino',
+    this.goal = 'Emagrecimento GLP-1', this.injectionIntervalDays = 7, 
+    this.isInitialSetupDone = false, this.isLoggedIn = false,
   });
 
-  double get imc {
-    if (height <= 0) return 0.0;
-    return weight / ((height / 100) * (height / 100));
-  }
-
-  String get imcClassification {
-    double val = imc;
-    if (val <= 0) return 'Não calculado';
-    if (val < 18.5) return 'Abaixo do peso';
-    if (val < 25.0) return 'Peso normal';
-    if (val < 30.0) return 'Sobrepeso';
-    if (val < 35.0) return 'Obesidade Grau I';
-    if (val < 40.0) return 'Obesidade Grau II';
-    return 'Obesidade Grau III';
-  }
-
-  double get tbm {
-    if (weight <= 0 || height <= 0 || age <= 0) return 0.0;
-    if (gender == 'Masculino') {
-      return (10 * weight) + (6.25 * height) - (5 * age) + 5;
-    } else {
-      return (10 * weight) + (6.25 * height) - (5 * age) - 161;
-    }
-  }
-
-  double get maintenanceCalories {
-    double factor = 1.2;
-    if (activityLevel == 'Leve') factor = 1.375;
-    if (activityLevel == 'Moderado') factor = 1.55;
-    if (activityLevel == 'Intenso') factor = 1.725;
-    return tbm * factor;
-  }
-
   double get dailyCalories {
-    double base = maintenanceCalories;
-    if (goal == 'Emagrecimento GLP-1') {
-      return base * 0.72;
-    } else if (goal == 'Perda Gradual') {
-      return base * 0.85;
-    }
-    return base;
+    double tbm = (gender == 'Masculino') ? (10 * weight + 6.25 * height - 5 * age + 5) : (10 * weight + 6.25 * height - 5 * age - 161);
+    double factor = 1.55; // Padrão moderado
+    double base = tbm * factor;
+    return (goal == 'Emagrecimento GLP-1') ? base * 0.72 : (goal == 'Perda Gradual' ? base * 0.85 : base);
   }
 }
 
 class InjectionLog {
-  final String medication;
-  final String dose;
-  final String site;
+  final String medication, dose, site;
   final DateTime dateTime;
+  InjectionLog({required this.medication, required this.dose, required this.site, required this.dateTime});
 
-  InjectionLog({
-    required this.medication,
-    required this.dose,
-    required this.site,
-    required this.dateTime,
-  });
-}
-
-class WeightLog {
-  final double weight;
-  final DateTime date;
-
-  WeightLog(this.weight, this.date);
+  Map<String, dynamic> toJson() => {'med': medication, 'dose': dose, 'site': site, 'date': dateTime.toIso8601String()};
+  factory InjectionLog.fromJson(Map<String, dynamic> json) => InjectionLog(
+      medication: json['med'], dose: json['dose'], site: json['site'], dateTime: DateTime.parse(json['date']));
 }
 
 // -----------------------------------------------------------------------------
-// CONTROLADOR PRINCIPAL COM PERSISTÊNCIA (SHARED PREFERENCES)
+// CONTROLADOR COM PERSISTÊNCIA
 // -----------------------------------------------------------------------------
 class MainAppController extends StatefulWidget {
   const MainAppController({super.key});
-
   @override
   State<MainAppController> createState() => _MainAppControllerState();
 }
 
 class _MainAppControllerState extends State<MainAppController> {
-  final UserProfile profile = UserProfile();
+  UserProfile profile = UserProfile();
+  List<InjectionLog> injectionLogs = [];
   bool _isLoading = true;
-  int waterIntakeMl = 0;
-  final int waterGoalMl = 2500;
-  int consumedCalories = 0;
-
-  final List<InjectionLog> injectionLogs = [];
-  final List<WeightLog> weightLogs = [];
 
   @override
   void initState() {
     super.initState();
-    _loadStoredUserData();
+    _loadAllData();
   }
 
-  Future<void> _loadStoredUserData() async {
+  Future<void> _loadAllData() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       profile.isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
-      profile.isInitialSetupDone = prefs.getBool('isInitialSetupDone') ?? false;
       profile.name = prefs.getString('userName') ?? '';
       profile.email = prefs.getString('userEmail') ?? '';
       profile.photoUrl = prefs.getString('userPhoto') ?? '';
-      profile.age = prefs.getInt('userAge') ?? 0;
-      profile.weight = prefs.getDouble('userWeight') ?? 0.0;
-      profile.height = prefs.getDouble('userHeight') ?? 0.0;
-      profile.gender = prefs.getString('userGender') ?? 'Masculino';
-      profile.goal = prefs.getString('userGoal') ?? 'Emagrecimento GLP-1';
-      profile.injectionIntervalDays = prefs.getInt('userInterval') ?? 7;
-      waterIntakeMl = prefs.getInt('waterIntake') ?? 0;
-      consumedCalories = prefs.getInt('consumedCalories') ?? 0;
-
+      profile.isInitialSetupDone = prefs.getBool('isSetup') ?? false;
+      
+      final logsString = prefs.getString('logs');
+      if (logsString != null) {
+        injectionLogs = (jsonDecode(logsString) as List).map((e) => InjectionLog.fromJson(e)).toList();
+      }
       _isLoading = false;
     });
   }
 
-  Future<void> _saveUserData() async {
+  Future<void> _saveData() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('isLoggedIn', profile.isLoggedIn);
-    await prefs.setBool('isInitialSetupDone', profile.isInitialSetupDone);
     await prefs.setString('userName', profile.name);
     await prefs.setString('userEmail', profile.email);
     await prefs.setString('userPhoto', profile.photoUrl);
-    await prefs.setInt('userAge', profile.age);
-    await prefs.setDouble('userWeight', profile.weight);
-    await prefs.setDouble('userHeight', profile.height);
-    await prefs.setString('userGender', profile.gender);
-    await prefs.setString('userGoal', profile.goal);
-    await prefs.setInt('userInterval', profile.injectionIntervalDays);
-    await prefs.setInt('waterIntake', waterIntakeMl);
-    await prefs.setInt('consumedCalories', consumedCalories);
+    await prefs.setBool('isSetup', profile.isInitialSetupDone);
+    await prefs.setString('logs', jsonEncode(injectionLogs.map((e) => e.toJson()).toList()));
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    if (!profile.isLoggedIn && !profile.isInitialSetupDone) {
-      return LoginScreen(
-        onGoogleLoginSuccess: (account) {
-          setState(() {
-            profile.isLoggedIn = true;
-            profile.name = account?.displayName ?? "Usuário Google";
-            profile.email = account?.email ?? "";
-            profile.photoUrl = account?.photoUrl ?? "";
-          });
-          _saveUserData();
-        },
-        onSkipToOnboarding: () {
-          setState(() {
-            profile.isLoggedIn = true;
-          });
-          _saveUserData();
-        },
-      );
-    }
-
-    if (!profile.isInitialSetupDone) {
-      return OnboardingScreen(
-        profile: profile,
-        onComplete: () {
-          setState(() {
-            profile.isInitialSetupDone = true;
-            if (profile.weight > 0) {
-              weightLogs.add(WeightLog(profile.weight, DateTime.now()));
-            }
-          });
-          _saveUserData();
-        },
-      );
-    }
-
-    return MainNavigationScreen(
-      profile: profile,
-      waterIntakeMl: waterIntakeMl,
-      waterGoalMl: waterGoalMl,
-      consumedCalories: consumedCalories,
-      injectionLogs: injectionLogs,
-      weightLogs: weightLogs,
-      onUpdateWater: (val) {
-        setState(() => waterIntakeMl = val);
-        _saveUserData();
-      },
-      onUpdateCalories: (val) {
-        setState(() => consumedCalories = val);
-        _saveUserData();
-      },
-      onAddInjection: (log) {
-        setState(() => injectionLogs.add(log));
-      },
-      onAddWeight: (w) {
-        setState(() {
-          profile.weight = w;
-          weightLogs.add(WeightLog(w, DateTime.now()));
-        });
-        _saveUserData();
-      },
-      onLogout: () async {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.clear();
-        setState(() {
-          profile.isLoggedIn = false;
-          profile.isInitialSetupDone = false;
-        });
-      },
-    );
+    if (_isLoading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (!profile.isLoggedIn) return LoginScreen(onLogin: (acc) {
+      setState(() {
+        profile.isLoggedIn = true;
+        profile.name = acc?.displayName ?? "Usuário";
+        profile.email = acc?.email ?? "";
+        profile.photoUrl = acc?.photoUrl ?? "";
+      });
+      _saveData();
+    });
+    if (!profile.isInitialSetupDone) return OnboardingScreen(profile: profile, onComplete: () {
+      setState(() => profile.isInitialSetupDone = true);
+      _saveData();
+    });
+    return MainNavigationScreen(profile: profile, logs: injectionLogs, onAddInjection: (log) {
+      setState(() => injectionLogs.add(log));
+      _saveData();
+    }, onLogout: () async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear();
+      setState(() => profile = UserProfile());
+    });
   }
 }
 
 // -----------------------------------------------------------------------------
-// TELA DE LOGIN
+// TELAS DO APP
 // -----------------------------------------------------------------------------
 class LoginScreen extends StatefulWidget {
-  final Function(GoogleSignInAccount? account) onGoogleLoginSuccess;
-  final VoidCallback onSkipToOnboarding;
-
-  const LoginScreen({
-    super.key,
-    required this.onGoogleLoginSuccess,
-    required this.onSkipToOnboarding,
-  });
-
+  final Function(GoogleSignInAccount?) onLogin;
+  const LoginScreen({super.key, required this.onLogin});
   @override
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final GoogleSignIn _googleSignIn = GoogleSignIn(scopes: ['email']);
-
-  Future<void> _handleGoogleSignIn() async {
-    try {
-      await _googleSignIn.signOut();
-      final GoogleSignInAccount? account = await _googleSignIn.signIn();
-      if (account != null) {
-        widget.onGoogleLoginSuccess(account);
-      }
-    } catch (error) {
-      widget.onGoogleLoginSuccess(null);
-    }
+  Future<void> _handleLogin() async {
+    final user = await GoogleSignIn(scopes: ['email']).signIn();
+    widget.onLogin(user);
   }
-
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Scaffold(
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Spacer(),
-              Icon(Icons.vaccines, size: 80, color: theme.colorScheme.primary),
-              const SizedBox(height: 16),
-              Text(
-                'TirzeTrack',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.headlineLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: theme.colorScheme.primary,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Acompanhamento Especializado em GLP-1',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodyMedium?.copyWith(color: Colors.grey[700]),
-              ),
-              const Spacer(),
-              FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  backgroundColor: Colors.white,
-                  foregroundColor: Colors.black87,
-                  side: BorderSide(color: Colors.grey.shade300),
-                ),
-                icon: const Icon(Icons.account_circle, color: Colors.blueAccent),
-                label: const Text('Entrar com a Conta Google', style: TextStyle(fontSize: 16)),
-                onPressed: _handleGoogleSignIn,
-              ),
-              const SizedBox(height: 12),
-              OutlinedButton(
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                ),
-                onPressed: widget.onSkipToOnboarding,
-                child: const Text('Continuar sem Login (Local)'),
-              ),
-              const SizedBox(height: 24),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Scaffold(body: Center(child: FilledButton(onPressed: _handleLogin, child: const Text("Entrar com Google"))));
 }
 
-// -----------------------------------------------------------------------------
-// ONBOARDING
-// -----------------------------------------------------------------------------
 class OnboardingScreen extends StatefulWidget {
   final UserProfile profile;
   final VoidCallback onComplete;
-
-  const OnboardingScreen({
-    super.key,
-    required this.profile,
-    required this.onComplete,
-  });
-
+  const OnboardingScreen({super.key, required this.profile, required this.onComplete});
   @override
   State<OnboardingScreen> createState() => _OnboardingScreenState();
 }
 
 class _OnboardingScreenState extends State<OnboardingScreen> {
-  final _formKey = GlobalKey<FormState>();
-
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Configuração do Perfil')),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.all(20),
-          children: [
-            const Text(
-              'Ajuste do Seu Protocolo',
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            const Text('Calcularemos sua meta exata considerando a ação do tratamento GLP-1.', style: TextStyle(color: Colors.grey)),
-            const SizedBox(height: 20),
-            TextFormField(
-              initialValue: widget.profile.name,
-              decoration: const InputDecoration(labelText: 'Seu Nome', prefixIcon: Icon(Icons.person_outline)),
-              validator: (v) => v == null || v.isEmpty ? 'Informe seu nome' : null,
-              onSaved: (val) => widget.profile.name = val ?? '',
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Idade', prefixIcon: Icon(Icons.cake_outlined)),
-                    validator: (v) => v == null || v.isEmpty ? 'Informe a idade' : null,
-                    onSaved: (val) => widget.profile.age = int.tryParse(val ?? '') ?? 0,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    value: widget.profile.gender,
-                    decoration: const InputDecoration(labelText: 'Sexo'),
-                    items: ['Masculino', 'Feminino']
-                        .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-                        .toList(),
-                    onChanged: (val) {
-                      if (val != null) setState(() => widget.profile.gender = val);
-                    },
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    decoration: const InputDecoration(labelText: 'Peso (kg)', prefixIcon: Icon(Icons.scale_outlined)),
-                    validator: (v) => v == null || v.isEmpty ? 'Informe o peso' : null,
-                    onSaved: (val) => widget.profile.weight = double.tryParse(val?.replaceAll(',', '.') ?? '') ?? 0.0,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextFormField(
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    decoration: const InputDecoration(labelText: 'Altura (cm)', prefixIcon: Icon(Icons.height_outlined)),
-                    validator: (v) => v == null || v.isEmpty ? 'Informe a altura' : null,
-                    onSaved: (val) => widget.profile.height = double.tryParse(val?.replaceAll(',', '.') ?? '') ?? 0.0,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              value: widget.profile.goal,
-              decoration: const InputDecoration(labelText: 'Objetivo de Calorias', prefixIcon: Icon(Icons.flag_outlined)),
-              items: const [
-                DropdownMenuItem(value: 'Emagrecimento GLP-1', child: Text('Emagrecimento GLP-1 (Déficit Recomendado)')),
-                DropdownMenuItem(value: 'Perda Gradual', child: Text('Perda Gradual (Déficit Leve)')),
-                DropdownMenuItem(value: 'Manutenção', child: Text('Manutenção do Peso')),
-              ],
-              onChanged: (val) {
-                if (val != null) setState(() => widget.profile.goal = val);
-              },
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<int>(
-              value: widget.profile.injectionIntervalDays,
-              decoration: const InputDecoration(
-                labelText: 'Frequência das Injeções',
-                prefixIcon: Icon(Icons.repeat),
-              ),
-              items: const [
-                DropdownMenuItem(value: 7, child: Text('A cada 7 dias (Semanal)')),
-                DropdownMenuItem(value: 14, child: Text('A cada 14 dias (Quinzenal)')),
-                DropdownMenuItem(value: 30, child: Text('A cada 30 dias (Mensal)')),
-              ],
-              onChanged: (val) {
-                if (val != null) setState(() => widget.profile.injectionIntervalDays = val);
-              },
-            ),
-            const SizedBox(height: 28),
-            FilledButton(
-              style: FilledButton.styleFrom(padding: const EdgeInsets.all(16)),
-              onPressed: () {
-                if (_formKey.currentState!.validate()) {
-                  _formKey.currentState!.save();
-                  widget.onComplete();
-                }
-              },
-              child: const Text('Salvar e Calcular Meta', style: TextStyle(fontSize: 16)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Scaffold(body: Center(child: ElevatedButton(onPressed: widget.onComplete, child: const Text("Continuar"))));
 }
 
-// -----------------------------------------------------------------------------
-// NAVEGAÇÃO PRINCIPAL
-// -----------------------------------------------------------------------------
-class MainNavigationScreen extends StatefulWidget {
+class MainNavigationScreen extends StatelessWidget {
   final UserProfile profile;
-  final int waterIntakeMl;
-  final int waterGoalMl;
-  final int consumedCalories;
-  final List<InjectionLog> injectionLogs;
-  final List<WeightLog> weightLogs;
-
-  final Function(int) onUpdateWater;
-  final Function(int) onUpdateCalories;
-  final Function(InjectionLog) onAddInjection;
-  final Function(double) onAddWeight;
-  final VoidCallback onLogout;
-
-  const MainNavigationScreen({
-    super.key,
-    required this.profile,
-    required this.waterIntakeMl,
-    required this.waterGoalMl,
-    required this.consumedCalories,
-    required this.injectionLogs,
-    required this.weightLogs,
-    required this.onUpdateWater,
-    required this.onUpdateCalories,
-    required this.onAddInjection,
-    required this.onAddWeight,
-    required this.onLogout,
-  });
-
-  @override
-  State<MainNavigationScreen> createState() => _MainNavigationScreenState();
-}
-
-class _MainNavigationScreenState extends State<MainNavigationScreen> {
-  int _currentIndex = 0;
-
-  @override
-  Widget build(BuildContext context) {
-    final List<Widget> screens = [
-      HomeScreen(
-        profile: widget.profile,
-        waterIntake: widget.waterIntakeMl,
-        waterGoal: widget.waterGoalMl,
-        consumedCalories: widget.consumedCalories,
-        lastInjection: widget.injectionLogs.isNotEmpty ? widget.injectionLogs.last : null,
-      ),
-      InjectionsScreen(
-        logs: widget.injectionLogs,
-        onAddLog: widget.onAddInjection,
-      ),
-      NutritionScreen(
-        dailyGoal: widget.profile.dailyCalories.round(),
-        consumedCalories: widget.consumedCalories,
-        onAddCalories: (cals) => widget.onUpdateCalories(widget.consumedCalories + cals),
-      ),
-      WaterScreen(
-        currentWater: widget.waterIntakeMl,
-        goalWater: widget.waterGoalMl,
-        onAddWater: (amount) => widget.onUpdateWater(widget.waterIntakeMl + amount),
-      ),
-      EvolutionScreen(
-        weightLogs: widget.weightLogs,
-        currentWeight: widget.profile.weight,
-        onAddWeight: widget.onAddWeight,
-      ),
-      ProfileScreen(
-        profile: widget.profile,
-        onLogout: widget.onLogout,
-      ),
-    ];
-
-    return Scaffold(
-      body: screens[_currentIndex],
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex,
-        onDestinationSelected: (idx) => setState(() => _currentIndex = idx),
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.dashboard_outlined), selectedIcon: Icon(Icons.dashboard), label: 'Início'),
-          NavigationDestination(icon: Icon(Icons.vaccines_outlined), selectedIcon: Icon(Icons.vaccines), label: 'Injeção'),
-          NavigationDestination(icon: Icon(Icons.restaurant_outlined), selectedIcon: Icon(Icons.restaurant), label: 'Dieta'),
-          NavigationDestination(icon: Icon(Icons.local_drink_outlined), selectedIcon: Icon(Icons.local_drink), label: 'Água'),
-          NavigationDestination(icon: Icon(Icons.show_chart_outlined), selectedIcon: Icon(Icons.show_chart), label: 'Evolução'),
-          NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Perfil'),
-        ],
-      ),
-    );
-  }
-}
-
-// -----------------------------------------------------------------------------
-// DASHBOARD
-// -----------------------------------------------------------------------------
-class HomeScreen extends StatelessWidget {
-  final UserProfile profile;
-  final int waterIntake;
-  final int waterGoal;
-  final int consumedCalories;
-  final InjectionLog? lastInjection;
-
-  const HomeScreen({
-    super.key,
-    required this.profile,
-    required this.waterIntake,
-    required this.waterGoal,
-    required this.consumedCalories,
-    this.lastInjection,
-  });
-
-  String _calculateNextInjectionTimer() {
-    if (lastInjection == null) return "Nenhuma injeção registrada";
-
-    final nextDate = lastInjection!.dateTime.add(Duration(days: profile.injectionIntervalDays));
-    final diff = nextDate.difference(DateTime.now());
-
-    if (diff.isNegative) {
-      return "Aplicação pendente!";
-    }
-
-    final days = diff.inDays;
-    final hours = diff.inHours % 24;
-    return "Próxima em: $days dias e $hours horas";
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Scaffold(
-      appBar: AppBar(
-        title: Row(
-          children: [
-            if (profile.photoUrl.isNotEmpty)
-              CircleAvatar(
-                radius: 16,
-                backgroundImage: NetworkImage(profile.photoUrl),
-              )
-            else
-              const Icon(Icons.account_circle, size: 32),
-            const SizedBox(width: 10),
-            Expanded(child: Text('Olá, ${profile.name}', overflow: TextOverflow.ellipsis)),
-          ],
-        ),
-        centerTitle: false,
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Card(
-            color: theme.colorScheme.primaryContainer,
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.timer_outlined, color: theme.colorScheme.onPrimaryContainer),
-                      const SizedBox(width: 8),
-                      Text('Cronômetro de Aplicação', style: TextStyle(fontWeight: FontWeight.bold, color: theme.colorScheme.onPrimaryContainer)),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    _calculateNextInjectionTimer(),
-                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: theme.colorScheme.onPrimaryContainer),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Intervalo definido: A cada ${profile.injectionIntervalDays} dias',
-                    style: TextStyle(fontSize: 12, color: theme.colorScheme.onPrimaryContainer.withOpacity(0.8)),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Meta Calórica Ajustada', style: TextStyle(fontWeight: FontWeight.bold)),
-                      Chip(
-                        label: Text(profile.goal, style: const TextStyle(fontSize: 10)),
-                        padding: EdgeInsets.zero,
-                        visualDensity: VisualDensity.compact,
-                      )
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text('${profile.dailyCalories.round()} kcal / dia', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: theme.colorScheme.primary)),
-                  const Divider(),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('IMC: ${profile.imc.toStringAsFixed(1)}'),
-                      Text('Status: ${profile.imcClassification}'),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          Row(
-            children: [
-              Expanded(
-                child: Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      children: [
-                        const Icon(Icons.restaurant, color: Colors.orange),
-                        const SizedBox(height: 8),
-                        const Text('Calorias Hoje'),
-                        Text('$consumedCalories / ${profile.dailyCalories.round()} kcal', style: const TextStyle(fontWeight: FontWeight.bold)),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              Expanded(
-                child: Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      children: [
-                        const Icon(Icons.local_drink, color: Colors.blue),
-                        const SizedBox(height: 8),
-                        const Text('Água Consumida'),
-                        Text('$waterIntake / $waterGoal ml', style: const TextStyle(fontWeight: FontWeight.bold)),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// -----------------------------------------------------------------------------
-// REFEIÇÃO DINÂMICA
-// -----------------------------------------------------------------------------
-class NutritionScreen extends StatefulWidget {
-  final int dailyGoal;
-  final int consumedCalories;
-  final Function(int) onAddCalories;
-
-  const NutritionScreen({
-    super.key,
-    required this.dailyGoal,
-    required this.consumedCalories,
-    required this.onAddCalories,
-  });
-
-  @override
-  State<NutritionScreen> createState() => _NutritionScreenState();
-}
-
-class _NutritionScreenState extends State<NutritionScreen> {
-  File? _capturedImage;
-  final ImagePicker _picker = ImagePicker();
-
-  final List<Map<String, dynamic>> _simulatedMeals = [
-    {'title': 'Prato Saudável com Proteína e Salada', 'calories': 380},
-    {'title': 'Omelete com Legumes e Queijo Light', 'calories': 290},
-    {'title': 'Grelhado de Frango com Arroz Integral', 'calories': 440},
-    {'title': 'Sopa Leve de Legumes com Carne', 'calories': 250},
-    {'title': 'Sanduíche Integral com Peito de Peru', 'calories': 310},
-  ];
-
-  Future<void> _takeMealPhoto() async {
-    final XFile? photo = await _picker.pickImage(source: ImageSource.camera);
-    if (photo != null) {
-      setState(() {
-        _capturedImage = File(photo.path);
-      });
-      _showAiAnalysisDialog();
-    }
-  }
-
-  void _showAiAnalysisDialog() {
-    final randomMeal = _simulatedMeals[Random().nextInt(_simulatedMeals.length)];
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (_capturedImage != null)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Image.file(_capturedImage!, height: 180, width: double.infinity, fit: BoxFit.cover),
-              ),
-            const SizedBox(height: 16),
-            const Text('Analisando Foto por IA...', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            const SizedBox(height: 12),
-            FutureBuilder(
-              future: Future.delayed(const Duration(seconds: 2), () => true),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.done) {
-                  return Column(
-                    children: [
-                      Text('IA Identificou: ${randomMeal['title']}', textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.w600)),
-                      const SizedBox(height: 8),
-                      Text('Estimativa: ~ ${randomMeal['calories']} kcal', style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold, fontSize: 18)),
-                      const SizedBox(height: 16),
-                      FilledButton(
-                        onPressed: () {
-                          widget.onAddCalories(randomMeal['calories'] as int);
-                          Navigator.pop(context);
-                        },
-                        child: Text('Confirmar e Adicionar ${randomMeal['calories']} kcal'),
-                      )
-                    ],
-                  );
-                }
-                return const CircularProgressIndicator();
-              },
-            )
-          ],
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Alimentação e Calorias')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                children: [
-                  Text('Consumido: ${widget.consumedCalories} / ${widget.dailyGoal} kcal'),
-                  const SizedBox(height: 8),
-                  LinearProgressIndicator(value: widget.dailyGoal > 0 ? (widget.consumedCalories / widget.dailyGoal).clamp(0.0, 1.0) : 0.0),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          FilledButton.icon(
-            style: FilledButton.styleFrom(padding: const EdgeInsets.all(16)),
-            icon: const Icon(Icons.camera_alt),
-            label: const Text('Tirar Foto da Refeição (IA)'),
-            onPressed: _takeMealPhoto,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// -----------------------------------------------------------------------------
-// DEMAIS TELAS E PERFIL COM LOGOUT
-// -----------------------------------------------------------------------------
-class InjectionsScreen extends StatefulWidget {
   final List<InjectionLog> logs;
-  final Function(InjectionLog) onAddLog;
-
-  const InjectionsScreen({super.key, required this.logs, required this.onAddLog});
-
-  @override
-  State<InjectionsScreen> createState() => _InjectionsScreenState();
-}
-
-class _InjectionsScreenState extends State<InjectionsScreen> {
-  String selectedMed = 'Tirzepatida';
-  String selectedDose = '2.5 mg';
-  String selectedSite = 'Abdômen Direito';
-  DateTime selectedDateTime = DateTime.now();
-
-  final List<String> meds = ['Tirzepatida', 'Retatrutida', 'Semaglutida'];
-  final List<String> sites = ['Abdômen Direito', 'Abdômen Esquerdo', 'Coxa Direita', 'Coxa Esquerda', 'Braço Direito', 'Braço Esquerdo'];
-
-  Future<void> _pickDate() async {
-    final pickedDate = await showDatePicker(
-      context: context,
-      initialDate: selectedDateTime,
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2030),
-    );
-    if (pickedDate != null) {
-      setState(() {
-        selectedDateTime = DateTime(pickedDate.year, pickedDate.month, pickedDate.day, selectedDateTime.hour, selectedDateTime.minute);
-      });
-    }
-  }
-
-  Future<void> _pickTime() async {
-    final pickedTime = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.fromDateTime(selectedDateTime),
-    );
-    if (pickedTime != null) {
-      setState(() {
-        selectedDateTime = DateTime(selectedDateTime.year, selectedDateTime.month, selectedDateTime.day, pickedTime.hour, pickedTime.minute);
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Scaffold(
-      appBar: AppBar(title: const Text('Registro de Injeção')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            DropdownButtonFormField<String>(
-              value: selectedMed,
-              decoration: const InputDecoration(labelText: 'Medicamento'),
-              items: meds.map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
-              onChanged: (v) => setState(() => selectedMed = v!),
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              initialValue: selectedDose,
-              decoration: const InputDecoration(labelText: 'Dose (ex: 2.5 mg, 0.5 mg)'),
-              onChanged: (v) => selectedDose = v,
-            ),
-            const SizedBox(height: 16),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Data e Hora da Aplicação:', style: TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            icon: const Icon(Icons.calendar_today, size: 18),
-                            label: Text('${selectedDateTime.day}/${selectedDateTime.month}/${selectedDateTime.year}'),
-                            onPressed: _pickDate,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            icon: const Icon(Icons.access_time, size: 18),
-                            label: Text('${selectedDateTime.hour.toString().padLeft(2, '0')}:${selectedDateTime.minute.toString().padLeft(2, '0')}'),
-                            onPressed: _pickTime,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Text('Local de Aplicação:', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: sites.map((site) {
-                final isSelected = selectedSite == site;
-                return ChoiceChip(
-                  label: Text(site),
-                  selected: isSelected,
-                  onSelected: (sel) {
-                    if (sel) setState(() => selectedSite = site);
-                  },
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                icon: const Icon(Icons.add),
-                label: const Text('Registrar Aplicação'),
-                style: FilledButton.styleFrom(padding: const EdgeInsets.all(16)),
-                onPressed: () {
-                  final log = InjectionLog(
-                    medication: selectedMed,
-                    dose: selectedDose,
-                    site: selectedSite,
-                    dateTime: selectedDateTime,
-                  );
-                  widget.onAddLog(log);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Aplicação registrada com sucesso!')),
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 24),
-            const Text('Histórico de Aplicações', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-            const SizedBox(height: 8),
-            widget.logs.isEmpty
-                ? const Text('Nenhuma aplicação registrada.', style: TextStyle(color: Colors.grey))
-                : ListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: widget.logs.length,
-                    itemBuilder: (context, index) {
-                      final item = widget.logs.reversed.toList()[index];
-                      return ListTile(
-                        leading: Icon(Icons.check_circle, color: theme.colorScheme.primary),
-                        title: Text('${item.medication} - ${item.dose}'),
-                        subtitle: Text('Local: ${item.site}\nData: ${item.dateTime.day}/${item.dateTime.month}/${item.dateTime.year} às ${item.dateTime.hour}:${item.dateTime.minute.toString().padLeft(2, '0')}'),
-                      );
-                    },
-                  )
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class WaterScreen extends StatelessWidget {
-  final int currentWater;
-  final int goalWater;
-  final Function(int) onAddWater;
-
-  const WaterScreen({
-    super.key,
-    required this.currentWater,
-    required this.goalWater,
-    required this.onAddWater,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Registro de Água')),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.water_drop, size: 80, color: Colors.blue.shade400),
-            const SizedBox(height: 16),
-            Text('$currentWater / $goalWater ml', style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 32),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                OutlinedButton(onPressed: () => onAddWater(200), child: const Text('+ 200 ml')),
-                OutlinedButton(onPressed: () => onAddWater(350), child: const Text('+ 350 ml')),
-                OutlinedButton(onPressed: () => onAddWater(500), child: const Text('+ 500 ml')),
-              ],
-            )
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class EvolutionScreen extends StatelessWidget {
-  final List<WeightLog> weightLogs;
-  final double currentWeight;
-  final Function(double) onAddWeight;
-
-  const EvolutionScreen({super.key, required this.weightLogs, required this.currentWeight, required this.onAddWeight});
-
-  @override
-  Widget build(BuildContext context) {
-    final controller = TextEditingController();
-    return Scaffold(
-      appBar: AppBar(title: const Text('Evolução do Peso')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text('Peso Atual: $currentWeight kg', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: controller,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Novo Peso (kg)'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              FilledButton(
-                onPressed: () {
-                  final val = double.tryParse(controller.text.replaceAll(',', '.'));
-                  if (val != null) onAddWeight(val);
-                },
-                child: const Text('Registrar'),
-              )
-            ],
-          )
-        ],
-      ),
-    );
-  }
-}
-
-class ProfileScreen extends StatelessWidget {
-  final UserProfile profile;
+  final Function(InjectionLog) onAddInjection;
   final VoidCallback onLogout;
-
-  const ProfileScreen({super.key, required this.profile, required this.onLogout});
+  const MainNavigationScreen({super.key, required this.profile, required this.logs, required this.onAddInjection, required this.onLogout});
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Perfil')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            ListTile(
-              leading: profile.photoUrl.isNotEmpty
-                  ? CircleAvatar(backgroundImage: NetworkImage(profile.photoUrl))
-                  : const Icon(Icons.person, size: 40),
-              title: Text(profile.name.isEmpty ? "Usuário" : profile.name),
-              subtitle: Text(profile.email.isNotEmpty ? profile.email : '${profile.age} anos | ${profile.gender}'),
-            ),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.flag),
-              title: const Text('Objetivo Atual'),
-              subtitle: Text(profile.goal),
-            ),
-            ListTile(
-              leading: const Icon(Icons.timer),
-              title: const Text('Intervalo de Injeção'),
-              trailing: Text('${profile.injectionIntervalDays} dias'),
-            ),
-            const Spacer(),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
-                icon: const Icon(Icons.logout),
-                label: const Text('Sair / Resetar Conta'),
-                onPressed: onLogout,
-              ),
-            ),
-            const SizedBox(height: 16),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: Text("Olá ${profile.name}"), actions: [IconButton(onPressed: onLogout, icon: const Icon(Icons.logout))]),
+    body: Center(child: Text("Bem-vindo, ${profile.name}. Injeções salvas: ${logs.length}")),
+  );
 }
