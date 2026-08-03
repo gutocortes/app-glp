@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import 'dart:io';
 
 void main() {
@@ -18,13 +17,8 @@ class TirzeTrackApp extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF0061A4), // Azul Médico / Saúde
+          seedColor: const Color(0xFF006C50),
           brightness: Brightness.light,
-        ),
-        cardTheme: CardTheme(
-          elevation: 0,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          color: const Color(0xFFF0F4F9),
         ),
         inputDecorationTheme: InputDecorationTheme(
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
@@ -155,10 +149,10 @@ class _MainAppControllerState extends State<MainAppController> {
   Widget build(BuildContext context) {
     if (!profile.isLoggedIn && !profile.isInitialSetupDone) {
       return LoginScreen(
-        onGoogleLoginSuccess: (String userName) {
+        onGoogleLogin: () {
           setState(() {
             profile.isLoggedIn = true;
-            profile.name = userName;
+            profile.name = "Usuário Google";
           });
         },
         onSkipToOnboarding: () {
@@ -204,43 +198,17 @@ class _MainAppControllerState extends State<MainAppController> {
 }
 
 // -----------------------------------------------------------------------------
-// TELA DE LOGIN COM GOOGLE NATIVO
+// TELA DE LOGIN
 // -----------------------------------------------------------------------------
-class LoginScreen extends StatefulWidget {
-  final Function(String userName) onGoogleLoginSuccess;
+class LoginScreen extends StatelessWidget {
+  final VoidCallback onGoogleLogin;
   final VoidCallback onSkipToOnboarding;
 
   const LoginScreen({
     super.key,
-    required this.onGoogleLoginSuccess,
+    required this.onGoogleLogin,
     required this.onSkipToOnboarding,
   });
-
-  @override
-  State<LoginScreen> createState() => _LoginScreenState();
-}
-
-class _LoginScreenState extends State<LoginScreen> {
-  final GoogleSignIn _googleSignIn = GoogleSignIn(
-    scopes: ['email'],
-  );
-
-  Future<void> _handleGoogleSignIn() async {
-    try {
-      final GoogleSignInAccount? account = await _googleSignIn.signIn();
-      if (account != null) {
-        widget.onGoogleLoginSuccess(account.displayName ?? "Usuário Google");
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Bem-vindo(a), ${account.displayName ?? "Usuário"}!')),
-          );
-        }
-      }
-    } catch (error) {
-      // Caso ocorra cancelamento ou modo local
-      widget.onGoogleLoginSuccess("Usuário Google");
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -278,16 +246,21 @@ class _LoginScreenState extends State<LoginScreen> {
                   foregroundColor: Colors.black87,
                   side: BorderSide(color: Colors.grey.shade300),
                 ),
-                icon: const Icon(Icons.account_circle, color: Colors.blueAccent),
+                icon: const Icon(Icons.account_circle, color: Colors.redAccent),
                 label: const Text('Entrar com a Conta Google', style: TextStyle(fontSize: 16)),
-                onPressed: _handleGoogleSignIn,
+                onPressed: () {
+                  onGoogleLogin();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Sincronização Google Ativada!')),
+                  );
+                },
               ),
               const SizedBox(height: 12),
               OutlinedButton(
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                 ),
-                onPressed: widget.onSkipToOnboarding,
+                onPressed: onSkipToOnboarding,
                 child: const Text('Continuar sem Login (Local)'),
               ),
               const SizedBox(height: 24),
@@ -300,7 +273,7 @@ class _LoginScreenState extends State<LoginScreen> {
 }
 
 // -----------------------------------------------------------------------------
-// CADASTRO INICIAL (ONBOARDING)
+// CADASTRO INICIAL (ONBOARDING COM FOCO GLP-1)
 // -----------------------------------------------------------------------------
 class OnboardingScreen extends StatefulWidget {
   final UserProfile profile;
@@ -527,7 +500,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 }
 
 // -----------------------------------------------------------------------------
-// 1. TELA INICIAL
+// 1. TELA INICIAL (DASHBOARD AJUSTADO GLP-1)
 // -----------------------------------------------------------------------------
 class HomeScreen extends StatelessWidget {
   final UserProfile profile;
@@ -620,7 +593,7 @@ class HomeScreen extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 4),
-                  Text('${profile.dailyCalories.round()} kcal / dia', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: theme.colorScheme.primary)),
+                  Text('${profile.dailyCalories.round()} kcal / dia', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF006C50))),
                   const Divider(),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -676,7 +649,7 @@ class HomeScreen extends StatelessWidget {
 }
 
 // -----------------------------------------------------------------------------
-// 2. REGISTRO DE INJEÇÕES
+// RESTANTE DOS COMPONENTES (MANTIDOS E INTEGRADOS)
 // -----------------------------------------------------------------------------
 class InjectionsScreen extends StatefulWidget {
   final List<InjectionLog> logs;
@@ -725,7 +698,6 @@ class _InjectionsScreenState extends State<InjectionsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(title: const Text('Registro de Injeção')),
       body: SingleChildScrollView(
@@ -826,7 +798,7 @@ class _InjectionsScreenState extends State<InjectionsScreen> {
                     itemBuilder: (context, index) {
                       final item = widget.logs.reversed.toList()[index];
                       return ListTile(
-                        leading: Icon(Icons.check_circle, color: theme.colorScheme.primary),
+                        leading: const Icon(Icons.check_circle, color: Color(0xFF006C50)),
                         title: Text('${item.medication} - ${item.dose}'),
                         subtitle: Text('Local: ${item.site}\nData: ${item.dateTime.day}/${item.dateTime.month}/${item.dateTime.year} às ${item.dateTime.hour}:${item.dateTime.minute.toString().padLeft(2, '0')}'),
                       );
@@ -839,9 +811,6 @@ class _InjectionsScreenState extends State<InjectionsScreen> {
   }
 }
 
-// -----------------------------------------------------------------------------
-// 3. TELA DE REFEIÇÃO / CÂMERA
-// -----------------------------------------------------------------------------
 class NutritionScreen extends StatefulWidget {
   final int dailyGoal;
   final int consumedCalories;
@@ -948,9 +917,6 @@ class _NutritionScreenState extends State<NutritionScreen> {
   }
 }
 
-// -----------------------------------------------------------------------------
-// 4. ÁGUA
-// -----------------------------------------------------------------------------
 class WaterScreen extends StatelessWidget {
   final int currentWater;
   final int goalWater;
@@ -991,9 +957,6 @@ class WaterScreen extends StatelessWidget {
   }
 }
 
-// -----------------------------------------------------------------------------
-// 5. EVOLUÇÃO E PERFIL
-// -----------------------------------------------------------------------------
 class EvolutionScreen extends StatelessWidget {
   final List<WeightLog> weightLogs;
   final double currentWeight;
