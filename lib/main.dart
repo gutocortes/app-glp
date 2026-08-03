@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
 
 void main() {
-  runApp(const HealthTrackApp());
+  runApp(const TirzeTrackApp());
 }
 
-class HealthTrackApp extends StatelessWidget {
-  const HealthTrackApp({super.key});
+class TirzeTrackApp extends StatelessWidget {
+  const TirzeTrackApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -17,6 +19,16 @@ class HealthTrackApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF006C50),
           brightness: Brightness.light,
+        ),
+        cardTheme: CardTheme(
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          color: const Color(0xFFF2F5F3),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+          filled: true,
+          fillColor: Colors.white,
         ),
       ),
       home: const MainAppController(),
@@ -30,11 +42,13 @@ class HealthTrackApp extends StatelessWidget {
 class UserProfile {
   String name;
   int age;
-  double weight; // kg
-  double height; // cm
-  String gender; // 'Masculino' ou 'Feminino'
+  double weight;
+  double height;
+  String gender;
   String activityLevel;
+  int injectionIntervalDays; // Intervalo de dias entre injeções
   bool isInitialSetupDone;
+  bool isLoggedIn;
 
   UserProfile({
     this.name = '',
@@ -43,7 +57,9 @@ class UserProfile {
     this.height = 0.0,
     this.gender = 'Masculino',
     this.activityLevel = 'Moderado',
+    this.injectionIntervalDays = 7,
     this.isInitialSetupDone = false,
+    this.isLoggedIn = false,
   });
 
   double get imc {
@@ -62,7 +78,6 @@ class UserProfile {
     return 'Obesidade Grau III';
   }
 
-  // Cálculo da Taxa Metabólica Basal (Harris-Benedict)
   double get tbm {
     if (weight <= 0 || height <= 0 || age <= 0) return 0.0;
     if (gender == 'Masculino') {
@@ -85,13 +100,13 @@ class InjectionLog {
   final String medication;
   final String dose;
   final String site;
-  final DateTime date;
+  final DateTime dateTime;
 
   InjectionLog({
     required this.medication,
     required this.dose,
     required this.site,
-    required this.date,
+    required this.dateTime,
   });
 }
 
@@ -102,15 +117,8 @@ class WeightLog {
   WeightLog(this.weight, this.date);
 }
 
-class FoodItem {
-  final String name;
-  final int calories;
-
-  FoodItem(this.name, this.calories);
-}
-
 // -----------------------------------------------------------------------------
-// CONTROLADOR PRINCIPAL
+// CONTROLADOR PRINCIPAL DA APLICAÇÃO
 // -----------------------------------------------------------------------------
 class MainAppController extends StatefulWidget {
   const MainAppController({super.key});
@@ -128,21 +136,35 @@ class _MainAppControllerState extends State<MainAppController> {
   final List<InjectionLog> injectionLogs = [];
   final List<WeightLog> weightLogs = [];
 
-  void _completeInitialSetup() {
-    setState(() {
-      profile.isInitialSetupDone = true;
-      if (profile.weight > 0) {
-        weightLogs.add(WeightLog(profile.weight, DateTime.now()));
-      }
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
+    if (!profile.isLoggedIn && !profile.isInitialSetupDone) {
+      return LoginScreen(
+        onGoogleLogin: () {
+          setState(() {
+            profile.isLoggedIn = true;
+            profile.name = "Usuário Google";
+          });
+        },
+        onSkipToOnboarding: () {
+          setState(() {
+            profile.isLoggedIn = true;
+          });
+        },
+      );
+    }
+
     if (!profile.isInitialSetupDone) {
       return OnboardingScreen(
         profile: profile,
-        onComplete: _completeInitialSetup,
+        onComplete: () {
+          setState(() {
+            profile.isInitialSetupDone = true;
+            if (profile.weight > 0) {
+              weightLogs.add(WeightLog(profile.weight, DateTime.now()));
+            }
+          });
+        },
       );
     }
 
@@ -162,6 +184,82 @@ class _MainAppControllerState extends State<MainAppController> {
           weightLogs.add(WeightLog(w, DateTime.now()));
         });
       },
+    );
+  }
+}
+
+// -----------------------------------------------------------------------------
+// TELA DE LOGIN (MATERIAL DESIGN 3)
+// -----------------------------------------------------------------------------
+class LoginScreen extends StatelessWidget {
+  final VoidCallback onGoogleLogin;
+  final VoidCallback onSkipToOnboarding;
+
+  const LoginScreen({
+    super.key,
+    required this.onGoogleLogin,
+    required this.onSkipToOnboarding,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Scaffold(
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Spacer(),
+              Icon(Icons.vaccines, size: 80, color: theme.colorScheme.primary),
+              const SizedBox(height: 16),
+              Text(
+                'TirzeTrack',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.headlineLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Acompanhamento inteligente de GLP-1',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium?.copyWith(color: Colors.grey[700]),
+              ),
+              const Spacer(),
+              // Botão Entrar com Google
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  backgroundColor: Colors.white,
+                  foregroundColor: Colors.black87,
+                  side: BorderSide(color: Colors.grey.shade300),
+                ),
+                icon: const Icon(Icons.account_circle, color: Colors.redAccent),
+                label: const Text('Entrar com a Conta Google', style: TextStyle(fontSize: 16)),
+                onPressed: () {
+                  onGoogleLogin();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Sincronização Google Ativada!')),
+                  );
+                },
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton(
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                ),
+                onPressed: onSkipToOnboarding,
+                child: const Text('Continuar sem Login (Local)'),
+              ),
+              const SizedBox(height: 24),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -189,35 +287,22 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('TirzeTrack'),
-        centerTitle: true,
-      ),
+      appBar: AppBar(title: const Text('Configuração do Perfil')),
       body: Form(
         key: _formKey,
         child: ListView(
           padding: const EdgeInsets.all(20),
           children: [
-            const Icon(Icons.health_and_safety, size: 70, color: Color(0xFF006C50)),
-            const SizedBox(height: 12),
             const Text(
-              'Bem-vindo ao TirzeTrack',
-              textAlign: TextAlign.center,
+              'Vamos personalizar sua rotina',
               style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
-            const Text(
-              'Configure seu perfil inicial para calcularmos seu IMC e metas calóricas diárias.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey),
-            ),
-            const SizedBox(height: 24),
+            const Text('Preencha os dados abaixo para ajustarmos suas metas diárias.', style: TextStyle(color: Colors.grey)),
+            const SizedBox(height: 20),
             TextFormField(
-              decoration: const InputDecoration(
-                labelText: 'Seu Nome',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.person),
-              ),
+              initialValue: widget.profile.name,
+              decoration: const InputDecoration(labelText: 'Seu Nome', prefixIcon: Icon(Icons.person_outline)),
               validator: (v) => v == null || v.isEmpty ? 'Informe seu nome' : null,
               onSaved: (val) => widget.profile.name = val ?? '',
             ),
@@ -227,11 +312,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 Expanded(
                   child: TextFormField(
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Idade',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.cake),
-                    ),
+                    decoration: const InputDecoration(labelText: 'Idade', prefixIcon: Icon(Icons.cake_outlined)),
                     validator: (v) => v == null || v.isEmpty ? 'Informe a idade' : null,
                     onSaved: (val) => widget.profile.age = int.tryParse(val ?? '') ?? 0,
                   ),
@@ -240,10 +321,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 Expanded(
                   child: DropdownButtonFormField<String>(
                     value: widget.profile.gender,
-                    decoration: const InputDecoration(
-                      labelText: 'Sexo',
-                      border: OutlineInputBorder(),
-                    ),
+                    decoration: const InputDecoration(labelText: 'Sexo'),
                     items: ['Masculino', 'Feminino']
                         .map((s) => DropdownMenuItem(value: s, child: Text(s)))
                         .toList(),
@@ -260,63 +338,48 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 Expanded(
                   child: TextFormField(
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    decoration: const InputDecoration(
-                      labelText: 'Peso Atual (kg)',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.monitor_weight),
-                    ),
+                    decoration: const InputDecoration(labelText: 'Peso (kg)', prefixIcon: Icon(Icons.scale_outlined)),
                     validator: (v) => v == null || v.isEmpty ? 'Informe o peso' : null,
-                    onSaved: (val) =>
-                        widget.profile.weight = double.tryParse(val?.replaceAll(',', '.') ?? '') ?? 0.0,
+                    onSaved: (val) => widget.profile.weight = double.tryParse(val?.replaceAll(',', '.') ?? '') ?? 0.0,
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: TextFormField(
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    decoration: const InputDecoration(
-                      labelText: 'Altura (cm)',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.height),
-                    ),
+                    decoration: const InputDecoration(labelText: 'Altura (cm)', prefixIcon: Icon(Icons.height_outlined)),
                     validator: (v) => v == null || v.isEmpty ? 'Informe a altura' : null,
-                    onSaved: (val) =>
-                        widget.profile.height = double.tryParse(val?.replaceAll(',', '.') ?? '') ?? 0.0,
+                    onSaved: (val) => widget.profile.height = double.tryParse(val?.replaceAll(',', '.') ?? '') ?? 0.0,
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              value: widget.profile.activityLevel,
+            DropdownButtonFormField<int>(
+              value: widget.profile.injectionIntervalDays,
               decoration: const InputDecoration(
-                labelText: 'Nível de Atividade Física',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.fitness_center),
+                labelText: 'Frequência das Injeções',
+                prefixIcon: Icon(Icons.repeat),
               ),
-              items: ['Sedentário', 'Leve', 'Moderado', 'Intenso']
-                  .map((a) => DropdownMenuItem(value: a, child: Text(a)))
-                  .toList(),
+              items: const [
+                DropdownMenuItem(value: 7, child: Text('A cada 7 dias (Semanal)')),
+                DropdownMenuItem(value: 14, child: Text('A cada 14 dias (Quinzenal)')),
+                DropdownMenuItem(value: 30, child: Text('A cada 30 dias (Mensal)')),
+              ],
               onChanged: (val) {
-                if (val != null) setState(() => widget.profile.activityLevel = val);
+                if (val != null) setState(() => widget.profile.injectionIntervalDays = val);
               },
             ),
             const SizedBox(height: 28),
-            SizedBox(
-              height: 50,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF006C50),
-                  foregroundColor: Colors.white,
-                ),
-                onPressed: () {
-                  if (_formKey.currentState!.validate()) {
-                    _formKey.currentState!.save();
-                    widget.onComplete();
-                  }
-                },
-                child: const Text('Salvar e Entrar no TirzeTrack', style: TextStyle(fontSize: 16)),
-              ),
+            FilledButton(
+              style: FilledButton.styleFrom(padding: const EdgeInsets.all(16)),
+              onPressed: () {
+                if (_formKey.currentState!.validate()) {
+                  _formKey.currentState!.save();
+                  widget.onComplete();
+                }
+              },
+              child: const Text('Salvar e Continuar', style: TextStyle(fontSize: 16)),
             ),
           ],
         ),
@@ -326,7 +389,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 }
 
 // -----------------------------------------------------------------------------
-// NAVEGAÇÃO PRINCIPAL (DASHBOARD)
+// NAVEGAÇÃO PRINCIPAL (MATERIAL DESIGN 3 NAVIGATION BAR)
 // -----------------------------------------------------------------------------
 class MainNavigationScreen extends StatefulWidget {
   final UserProfile profile;
@@ -403,12 +466,12 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         selectedIndex: _currentIndex,
         onDestinationSelected: (idx) => setState(() => _currentIndex = idx),
         destinations: const [
-          NavigationDestination(icon: Icon(Icons.dashboard_rounded), label: 'Início'),
-          NavigationDestination(icon: Icon(Icons.vaccines_rounded), label: 'Injeção'),
-          NavigationDestination(icon: Icon(Icons.restaurant_rounded), label: 'Dieta'),
-          NavigationDestination(icon: Icon(Icons.local_drink_rounded), label: 'Água'),
-          NavigationDestination(icon: Icon(Icons.show_chart_rounded), label: 'Evolução'),
-          NavigationDestination(icon: Icon(Icons.person_rounded), label: 'Perfil'),
+          NavigationDestination(icon: Icon(Icons.dashboard_outlined), selectedIcon: Icon(Icons.dashboard), label: 'Início'),
+          NavigationDestination(icon: Icon(Icons.vaccines_outlined), selectedIcon: Icon(Icons.vaccines), label: 'Injeção'),
+          NavigationDestination(icon: Icon(Icons.restaurant_outlined), selectedIcon: Icon(Icons.restaurant), label: 'Dieta'),
+          NavigationDestination(icon: Icon(Icons.local_drink_outlined), selectedIcon: Icon(Icons.local_drink), label: 'Água'),
+          NavigationDestination(icon: Icon(Icons.show_chart_outlined), selectedIcon: Icon(Icons.show_chart), label: 'Evolução'),
+          NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Perfil'),
         ],
       ),
     );
@@ -416,7 +479,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 }
 
 // -----------------------------------------------------------------------------
-// 1. TELA INICIAL (DASHBOARD)
+// 1. TELA INICIAL COM CRONÔMETRO DE INJEÇÃO
 // -----------------------------------------------------------------------------
 class HomeScreen extends StatelessWidget {
   final UserProfile profile;
@@ -434,32 +497,74 @@ class HomeScreen extends StatelessWidget {
     this.lastInjection,
   });
 
+  String _calculateNextInjectionTimer() {
+    if (lastInjection == null) return "Nenhuma injeção registrada";
+
+    final nextDate = lastInjection!.dateTime.add(Duration(days: profile.injectionIntervalDays));
+    final diff = nextDate.difference(DateTime.now());
+
+    if (diff.isNegative) {
+      return "Aplicação pendente!";
+    }
+
+    final days = diff.inDays;
+    final hours = diff.inHours % 24;
+    return "Próxima em: $days dias e $hours horas";
+  }
+
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
-      appBar: AppBar(title: Text('TirzeTrack - Olá, ${profile.name}')),
+      appBar: AppBar(
+        title: Text('Olá, ${profile.name}'),
+        centerTitle: false,
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // Card IMC/Calorias
+          // CARD CRONÔMETRO DA PRÓXIMA INJEÇÃO
           Card(
-            color: Theme.of(context).colorScheme.primaryContainer,
+            color: theme.colorScheme.primaryContainer,
             child: Padding(
               padding: const EdgeInsets.all(16.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Meta Calórica Diária',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                  const SizedBox(height: 8),
-                  Text(
-                    '${profile.dailyCalories.round()} kcal / dia',
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.onPrimaryContainer,
-                    ),
+                  Row(
+                    children: [
+                      Icon(Icons.timer_outlined, color: theme.colorScheme.onPrimaryContainer),
+                      const SizedBox(width: 8),
+                      Text('Cronômetro de Aplicação', style: TextStyle(fontWeight: FontWeight.bold, color: theme.colorScheme.onPrimaryContainer)),
+                    ],
                   ),
+                  const SizedBox(height: 12),
+                  Text(
+                    _calculateNextInjectionTimer(),
+                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: theme.colorScheme.onPrimaryContainer),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Intervalo definido: A cada ${profile.injectionIntervalDays} dias',
+                    style: TextStyle(fontSize: 12, color: theme.colorScheme.onPrimaryContainer.withOpacity(0.8)),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // RESUMO CALORIAS & IMC
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Meta Calórica Diária', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 4),
+                  Text('${profile.dailyCalories.round()} kcal / dia', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF006C50))),
                   const Divider(),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -474,19 +579,7 @@ class HomeScreen extends StatelessWidget {
           ),
           const SizedBox(height: 12),
 
-          // Resumo da Injeção
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.vaccines, color: Colors.teal, size: 36),
-              title: const Text('Última Aplicação'),
-              subtitle: lastInjection != null
-                  ? Text('${lastInjection!.medication} (${lastInjection!.dose}) - ${lastInjection!.site}')
-                  : const Text('Nenhuma aplicação registrada ainda.'),
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          // Resumo Nutrição e Água
+          // RESUMO NUTRIÇÃO E ÁGUA
           Row(
             children: [
               Expanded(
@@ -498,10 +591,7 @@ class HomeScreen extends StatelessWidget {
                         const Icon(Icons.restaurant, color: Colors.orange),
                         const SizedBox(height: 8),
                         const Text('Calorias Hoje'),
-                        Text(
-                          '$consumedCalories / ${profile.dailyCalories.round()} kcal',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
+                        Text('$consumedCalories / ${profile.dailyCalories.round()} kcal', style: const TextStyle(fontWeight: FontWeight.bold)),
                       ],
                     ),
                   ),
@@ -516,10 +606,7 @@ class HomeScreen extends StatelessWidget {
                         const Icon(Icons.local_drink, color: Colors.blue),
                         const SizedBox(height: 8),
                         const Text('Água Consumida'),
-                        Text(
-                          '$waterIntake / $waterGoal ml',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
+                        Text('$waterIntake / $waterGoal ml', style: const TextStyle(fontWeight: FontWeight.bold)),
                       ],
                     ),
                   ),
@@ -534,116 +621,7 @@ class HomeScreen extends StatelessWidget {
 }
 
 // -----------------------------------------------------------------------------
-// 2. TELA DE PERFIL / EDIÇÃO
-// -----------------------------------------------------------------------------
-class ProfileScreen extends StatefulWidget {
-  final UserProfile profile;
-  final VoidCallback onUpdate;
-
-  const ProfileScreen({super.key, required this.profile, required this.onUpdate});
-
-  @override
-  State<ProfileScreen> createState() => _ProfileScreenState();
-}
-
-class _ProfileScreenState extends State<ProfileScreen> {
-  final _formKey = GlobalKey<FormState>();
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Perfil e Dados')),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            TextFormField(
-              initialValue: widget.profile.name,
-              decoration: const InputDecoration(labelText: 'Nome', border: OutlineInputBorder()),
-              onChanged: (val) => widget.profile.name = val,
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    initialValue: widget.profile.age.toString(),
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Idade', border: OutlineInputBorder()),
-                    onChanged: (val) => widget.profile.age = int.tryParse(val) ?? widget.profile.age,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    value: widget.profile.gender,
-                    decoration: const InputDecoration(labelText: 'Sexo', border: OutlineInputBorder()),
-                    items: ['Masculino', 'Feminino']
-                        .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-                        .toList(),
-                    onChanged: (val) {
-                      if (val != null) setState(() => widget.profile.gender = val);
-                    },
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    initialValue: widget.profile.weight.toString(),
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    decoration: const InputDecoration(labelText: 'Peso (kg)', border: OutlineInputBorder()),
-                    onChanged: (val) =>
-                        widget.profile.weight = double.tryParse(val.replaceAll(',', '.')) ?? widget.profile.weight,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextFormField(
-                    initialValue: widget.profile.height.toString(),
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    decoration: const InputDecoration(labelText: 'Altura (cm)', border: OutlineInputBorder()),
-                    onChanged: (val) =>
-                        widget.profile.height = double.tryParse(val.replaceAll(',', '.')) ?? widget.profile.height,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              value: widget.profile.activityLevel,
-              decoration: const InputDecoration(labelText: 'Nível de Atividade Física', border: OutlineInputBorder()),
-              items: ['Sedentário', 'Leve', 'Moderado', 'Intenso']
-                  .map((a) => DropdownMenuItem(value: a, child: Text(a)))
-                  .toList(),
-              onChanged: (val) {
-                if (val != null) setState(() => widget.profile.activityLevel = val);
-              },
-            ),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(padding: const EdgeInsets.all(16)),
-              onPressed: () {
-                widget.onUpdate();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Perfil atualizado com sucesso!')),
-                );
-              },
-              child: const Text('Salvar Alterações'),
-            )
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// -----------------------------------------------------------------------------
-// 3. TELA DE INJEÇÃO E MAPA CORPORAL CUSTOMIZADO
+// 2. TELA DE REGISTRO DE INJEÇÃO COM DATA/HORA AJUSTÁVEL
 // -----------------------------------------------------------------------------
 class InjectionsScreen extends StatefulWidget {
   final List<InjectionLog> logs;
@@ -659,16 +637,48 @@ class _InjectionsScreenState extends State<InjectionsScreen> {
   String selectedMed = 'Tirzepatida';
   String selectedDose = '2.5 mg';
   String selectedSite = 'Abdômen Direito';
+  DateTime selectedDateTime = DateTime.now();
 
   final List<String> meds = ['Tirzepatida', 'Retatrutida', 'Semaglutida'];
-  final List<String> sites = [
-    'Abdômen Direito',
-    'Abdômen Esquerdo',
-    'Coxa Direita',
-    'Coxa Esquerda',
-    'Braço Direito',
-    'Braço Esquerdo'
-  ];
+  final List<String> sites = ['Abdômen Direito', 'Abdômen Esquerdo', 'Coxa Direita', 'Coxa Esquerda', 'Braço Direito', 'Braço Esquerdo'];
+
+  Future<void> _pickDate() async {
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: selectedDateTime,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2030),
+    );
+    if (pickedDate != null) {
+      setState(() {
+        selectedDateTime = DateTime(
+          pickedDate.year,
+          pickedDate.month,
+          pickedDate.day,
+          selectedDateTime.hour,
+          selectedDateTime.minute,
+        );
+      });
+    }
+  }
+
+  Future<void> _pickTime() async {
+    final pickedTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(selectedDateTime),
+    );
+    if (pickedTime != null) {
+      setState(() {
+        selectedDateTime = DateTime(
+          selectedDateTime.year,
+          selectedDateTime.month,
+          selectedDateTime.day,
+          pickedTime.hour,
+          pickedTime.minute,
+        );
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -681,76 +691,81 @@ class _InjectionsScreenState extends State<InjectionsScreen> {
           children: [
             DropdownButtonFormField<String>(
               value: selectedMed,
-              decoration: const InputDecoration(labelText: 'Medicamento', border: OutlineInputBorder()),
+              decoration: const InputDecoration(labelText: 'Medicamento'),
               items: meds.map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
               onChanged: (v) => setState(() => selectedMed = v!),
             ),
             const SizedBox(height: 12),
             TextFormField(
               initialValue: selectedDose,
-              decoration: const InputDecoration(labelText: 'Dose (ex: 2.5 mg, 0.5 mg)', border: OutlineInputBorder()),
+              decoration: const InputDecoration(labelText: 'Dose (ex: 2.5 mg, 0.5 mg)'),
               onChanged: (v) => selectedDose = v,
             ),
             const SizedBox(height: 16),
-            const Text('Selecione o Local de Aplicação:', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
 
-            // Mapa Corporal Visual com Gráfico + Silhueta + Injeção
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey.shade300),
-                borderRadius: BorderRadius.circular(16),
-                color: Colors.teal.shade50.withOpacity(0.3),
-              ),
-              child: Column(
-                children: [
-                  SizedBox(
-                    height: 120,
-                    width: 120,
-                    child: CustomPaint(
-                      painter: BodySyringeGraphPainter(),
+            // SELEÇÃO MANUAR OU AUTOMÁTICA DE DATA E HORA
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Data e Hora da Aplicação:', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            icon: const Icon(Icons.calendar_today, size: 18),
+                            label: Text('${selectedDateTime.day}/${selectedDateTime.month}/${selectedDateTime.year}'),
+                            onPressed: _pickDate,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            icon: const Icon(Icons.access_time, size: 18),
+                            label: Text('${selectedDateTime.hour.toString().padLeft(2, '0')}:${selectedDateTime.minute.toString().padLeft(2, '0')}'),
+                            onPressed: _pickTime,
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
-                    alignment: WrapAlignment.center,
-                    children: sites.map((site) {
-                      final isSelected = selectedSite == site;
-                      return ChoiceChip(
-                        label: Text(site),
-                        selected: isSelected,
-                        selectedColor: const Color(0xFF006C50),
-                        labelStyle: TextStyle(color: isSelected ? Colors.white : Colors.black87),
-                        onSelected: (sel) {
-                          if (sel) setState(() => selectedSite = site);
-                        },
-                      );
-                    }).toList(),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-
             const SizedBox(height: 16),
+            const Text('Local de Aplicação:', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+
+            Wrap(
+              spacing: 8,
+              children: sites.map((site) {
+                final isSelected = selectedSite == site;
+                return ChoiceChip(
+                  label: Text(site),
+                  selected: isSelected,
+                  onSelected: (sel) {
+                    if (sel) setState(() => selectedSite = site);
+                  },
+                );
+              }).toList(),
+            ),
+
+            const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
-              child: ElevatedButton.icon(
+              child: FilledButton.icon(
                 icon: const Icon(Icons.add),
                 label: const Text('Registrar Aplicação'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF006C50),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.all(16),
-                ),
+                style: FilledButton.styleFrom(padding: const EdgeInsets.all(16)),
                 onPressed: () {
                   final log = InjectionLog(
                     medication: selectedMed,
                     dose: selectedDose,
                     site: selectedSite,
-                    date: DateTime.now(),
+                    dateTime: selectedDateTime,
                   );
                   widget.onAddLog(log);
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -771,10 +786,9 @@ class _InjectionsScreenState extends State<InjectionsScreen> {
                     itemBuilder: (context, index) {
                       final item = widget.logs.reversed.toList()[index];
                       return ListTile(
-                        leading: const Icon(Icons.check_circle, color: Colors.teal),
+                        leading: const Icon(Icons.check_circle, color: Color(0xFF006C50)),
                         title: Text('${item.medication} - ${item.dose}'),
-                        subtitle: Text(
-                            'Local: ${item.site} | Data: ${item.date.day}/${item.date.month}/${item.date.year}'),
+                        subtitle: Text('Local: ${item.site}\nData: ${item.dateTime.day}/${item.dateTime.month}/${item.dateTime.year} às ${item.dateTime.hour}:${item.dateTime.minute.toString().padLeft(2, '0')}'),
                       );
                     },
                   )
@@ -785,67 +799,116 @@ class _InjectionsScreenState extends State<InjectionsScreen> {
   }
 }
 
-// Custom Painter para desenhar Gráfico ao Fundo + Silhueta do Corpo + Seringa/Injeção
-class BodySyringeGraphPainter extends CustomPainter {
+// -----------------------------------------------------------------------------
+// 3. TELA DE ALIMENTAÇÃO COM FOTO REAL DA CÂMERA
+// -----------------------------------------------------------------------------
+class NutritionScreen extends StatefulWidget {
+  final int dailyGoal;
+  final int consumedCalories;
+  final Function(int) onAddCalories;
+
+  const NutritionScreen({
+    super.key,
+    required this.dailyGoal,
+    required this.consumedCalories,
+    required this.onAddCalories,
+  });
+
   @override
-  void paint(Canvas canvas, Size size) {
-    final double w = size.width;
-    final double h = size.height;
+  State<NutritionScreen> createState() => _NutritionScreenState();
+}
 
-    // 1. Gráfico ao fundo (Linha de progresso)
-    final Paint graphPaint = Paint()
-      ..color = Colors.teal.withOpacity(0.3)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3;
+class _NutritionScreenState extends State<NutritionScreen> {
+  File? _capturedImage;
+  final ImagePicker _picker = ImagePicker();
 
-    final Path graphPath = Path()
-      ..moveTo(0, h * 0.7)
-      ..quadraticBezierTo(w * 0.25, h * 0.4, w * 0.5, h * 0.6)
-      ..quadraticBezierTo(w * 0.75, h * 0.8, w, h * 0.25);
+  Future<void> _takeMealPhoto() async {
+    final XFile? photo = await _picker.pickImage(source: ImageSource.camera);
+    if (photo != null) {
+      setState(() {
+        _capturedImage = File(photo.path);
+      });
 
-    canvas.drawPath(graphPath, graphPaint);
+      _showAiAnalysisDialog();
+    }
+  }
 
-    // 2. Silhueta do corpo (Centro)
-    final Paint bodyPaint = Paint()
-      ..color = const Color(0xFF006C50).withOpacity(0.85)
-      ..style = PaintingStyle.fill;
-
-    // Cabeça
-    canvas.drawCircle(Offset(w * 0.42, h * 0.22), w * 0.09, bodyPaint);
-
-    // Tronco e Pernas
-    final Path bodyPath = Path()
-      ..moveTo(w * 0.35, h * 0.33)
-      ..lineTo(w * 0.49, h * 0.33)
-      ..lineTo(w * 0.47, h * 0.65)
-      ..lineTo(w * 0.43, h * 0.90)
-      ..lineTo(w * 0.40, h * 0.90)
-      ..lineTo(w * 0.42, h * 0.65)
-      ..lineTo(w * 0.37, h * 0.65)
-      ..lineTo(w * 0.35, h * 0.90)
-      ..lineTo(w * 0.32, h * 0.90)
-      ..lineTo(w * 0.34, h * 0.65)
-      ..close();
-
-    canvas.drawPath(bodyPath, bodyPaint);
-
-    // 3. Seringa / Injeção (Sobreposta)
-    final Paint syringePaint = Paint()
-      ..color = Colors.teal.shade700
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3;
-
-    // Corpo da Seringa
-    canvas.drawRect(Rect.fromLTWH(w * 0.58, h * 0.35, w * 0.22, h * 0.12), syringePaint);
-    // Agulha
-    canvas.drawLine(Offset(w * 0.58, h * 0.41), Offset(w * 0.48, h * 0.41), syringePaint);
-    // Êmbolo
-    canvas.drawLine(Offset(w * 0.80, h * 0.41), Offset(w * 0.90, h * 0.41), syringePaint);
-    canvas.drawLine(Offset(w * 0.90, h * 0.36), Offset(w * 0.90, h * 0.46), syringePaint);
+  void _showAiAnalysisDialog() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_capturedImage != null)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.file(_capturedImage!, height: 180, width: double.infinity, fit: BoxFit.cover),
+              ),
+            const SizedBox(height: 16),
+            const Text('Escaneando Foto por IA...', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            const SizedBox(height: 12),
+            FutureBuilder(
+              future: Future.delayed(const Duration(seconds: 2), () => true),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.done) {
+                  return Column(
+                    children: [
+                      const Text('IA Identificou: Refeição Proteica Balanceada ~ 450 kcal', textAlign: TextAlign.center),
+                      const SizedBox(height: 16),
+                      FilledButton(
+                        onPressed: () {
+                          widget.onAddCalories(450);
+                          Navigator.pop(context);
+                        },
+                        child: const Text('Confirmar e Adicionar 450 kcal'),
+                      )
+                    ],
+                  );
+                }
+                return const CircularProgressIndicator();
+              },
+            )
+          ],
+        ),
+      ),
+    );
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Alimentação e Calorias')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                children: [
+                  Text('Consumido: ${widget.consumedCalories} / ${widget.dailyGoal} kcal'),
+                  const SizedBox(height: 8),
+                  LinearProgressIndicator(value: widget.dailyGoal > 0 ? (widget.consumedCalories / widget.dailyGoal).clamp(0.0, 1.0) : 0.0),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // BOTÃO CÂMERA REAL
+          FilledButton.icon(
+            style: FilledButton.styleFrom(padding: const EdgeInsets.all(16)),
+            icon: const Icon(Icons.camera_alt),
+            label: const Text('Tirar Foto da Refeição (IA)'),
+            onPressed: _takeMealPhoto,
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 // -----------------------------------------------------------------------------
@@ -865,8 +928,6 @@ class WaterScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    double progress = (currentWater / goalWater).clamp(0.0, 1.0);
-
     return Scaffold(
       appBar: AppBar(title: const Text('Registro de Água')),
       body: Padding(
@@ -877,17 +938,13 @@ class WaterScreen extends StatelessWidget {
             Icon(Icons.water_drop, size: 80, color: Colors.blue.shade400),
             const SizedBox(height: 16),
             Text('$currentWater / $goalWater ml', style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 16),
-            LinearProgressIndicator(value: progress, minHeight: 12),
             const SizedBox(height: 32),
-            const Text('Adicionar Tomada:'),
-            const SizedBox(height: 12),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                ElevatedButton(onPressed: () => onAddWater(200), child: const Text('+ 200 ml')),
-                ElevatedButton(onPressed: () => onAddWater(350), child: const Text('+ 350 ml')),
-                ElevatedButton(onPressed: () => onAddWater(500), child: const Text('+ 500 ml')),
+                OutlinedButton(onPressed: () => onAddWater(200), child: const Text('+ 200 ml')),
+                OutlinedButton(onPressed: () => onAddWater(350), child: const Text('+ 350 ml')),
+                OutlinedButton(onPressed: () => onAddWater(500), child: const Text('+ 500 ml')),
               ],
             )
           ],
@@ -898,146 +955,18 @@ class WaterScreen extends StatelessWidget {
 }
 
 // -----------------------------------------------------------------------------
-// 5. TELA DE ALIMENTAÇÃO E FOTO IA
-// -----------------------------------------------------------------------------
-class NutritionScreen extends StatefulWidget {
-  final int dailyGoal;
-  final int consumedCalories;
-  final Function(int) onAddCalories;
-
-  const NutritionScreen({
-    super.key,
-    required this.dailyGoal,
-    required this.consumedCalories,
-    required this.onAddCalories,
-  });
-
-  @override
-  State<NutritionScreen> createState() => _NutritionScreenState();
-}
-
-class _NutritionScreenState extends State<NutritionScreen> {
-  final List<FoodItem> commonFoods = [
-    FoodItem('Prato Feito (Arroz, Feijão, Frango, Salada)', 550),
-    FoodItem('Ovo Cozido (1un)', 70),
-    FoodItem('Pão Integral com Queijo', 200),
-    FoodItem('Salada Caesar com Grelhado', 350),
-    FoodItem('Shake de Proteína (Whey)', 150),
-  ];
-
-  void _simulateAiPhotoScanner() {
-    showModalBottomSheet(
-      context: context,
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.camera_enhance, size: 60, color: Colors.purple),
-            const SizedBox(height: 12),
-            const Text('Escaneando Refeição por IA...', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            const CircularProgressIndicator(),
-            const SizedBox(height: 16),
-            FutureBuilder(
-              future: Future.delayed(const Duration(seconds: 2), () => true),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.done) {
-                  return Column(
-                    children: [
-                      const Text('IA Identificou: Prato Saudável (Grelhado + Legumes) ~ 420 kcal'),
-                      const SizedBox(height: 12),
-                      ElevatedButton(
-                        onPressed: () {
-                          widget.onAddCalories(420);
-                          Navigator.pop(context);
-                        },
-                        child: const Text('Adicionar 420 kcal à meta'),
-                      )
-                    ],
-                  );
-                }
-                return const Text('Analisando imagem...');
-              },
-            )
-          ],
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    double progress = widget.dailyGoal > 0 ? (widget.consumedCalories / widget.dailyGoal).clamp(0.0, 1.0) : 0.0;
-
-    return Scaffold(
-      appBar: AppBar(title: const Text('Alimentação e Calorias')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                children: [
-                  Text('Consumido: ${widget.consumedCalories} / ${widget.dailyGoal} kcal'),
-                  const SizedBox(height: 8),
-                  LinearProgressIndicator(value: progress),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.purple.shade50,
-              padding: const EdgeInsets.all(16),
-            ),
-            icon: const Icon(Icons.camera_alt, color: Colors.purple),
-            label: const Text('Tirar Foto da Refeição (Calcular via IA)'),
-            onPressed: _simulateAiPhotoScanner,
-          ),
-          const SizedBox(height: 24),
-          const Text('Alimentos Rápidos', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-          const SizedBox(height: 8),
-          ...commonFoods.map((food) => ListTile(
-                title: Text(food.name),
-                subtitle: Text('${food.calories} kcal'),
-                trailing: IconButton(
-                  icon: const Icon(Icons.add_circle_outline, color: Colors.green),
-                  onPressed: () {
-                    widget.onAddCalories(food.calories);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('${food.name} adicionado!')),
-                    );
-                  },
-                ),
-              )),
-        ],
-      ),
-    );
-  }
-}
-
-// -----------------------------------------------------------------------------
-// 6. TELA DE EVOLUÇÃO (PESO)
+// 5. TELA DE EVOLUÇÃO E PERFIL
 // -----------------------------------------------------------------------------
 class EvolutionScreen extends StatelessWidget {
   final List<WeightLog> weightLogs;
   final double currentWeight;
   final Function(double) onAddWeight;
 
-  const EvolutionScreen({
-    super.key,
-    required this.weightLogs,
-    required this.currentWeight,
-    required this.onAddWeight,
-  });
+  const EvolutionScreen({super.key, required this.weightLogs, required this.currentWeight, required this.onAddWeight});
 
   @override
   Widget build(BuildContext context) {
-    final textController = TextEditingController();
-
+    final controller = TextEditingController();
     return Scaffold(
       appBar: AppBar(title: const Text('Evolução do Peso')),
       body: ListView(
@@ -1046,55 +975,62 @@ class EvolutionScreen extends StatelessWidget {
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text('Peso Atual:', style: TextStyle(fontSize: 18)),
-                  Text('$currentWeight kg', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-                ],
-              ),
+              child: Text('Peso Atual: $currentWeight kg', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           Row(
             children: [
               Expanded(
                 child: TextField(
-                  controller: textController,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(labelText: 'Novo Peso (kg)', border: OutlineInputBorder()),
+                  controller: controller,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'Novo Peso (kg)'),
                 ),
               ),
               const SizedBox(width: 8),
-              ElevatedButton(
+              FilledButton(
                 onPressed: () {
-                  final val = double.tryParse(textController.text.replaceAll(',', '.'));
-                  if (val != null) {
-                    onAddWeight(val);
-                    textController.clear();
-                  }
+                  final val = double.tryParse(controller.text.replaceAll(',', '.'));
+                  if (val != null) onAddWeight(val);
                 },
                 child: const Text('Registrar'),
               )
             ],
-          ),
-          const SizedBox(height: 24),
-          const Text('Histórico de Pesagem', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-          const SizedBox(height: 8),
-          weightLogs.isEmpty
-              ? const Text('Nenhum histórico registrado ainda.', style: TextStyle(color: Colors.grey))
-              : Column(
-                  children: weightLogs.reversed
-                      .map(
-                        (log) => ListTile(
-                          leading: const Icon(Icons.monitor_weight),
-                          title: Text('${log.weight} kg'),
-                          subtitle: Text('Data: ${log.date.day}/${log.date.month}/${log.date.year}'),
-                        ),
-                      )
-                      .toList(),
-                ),
+          )
         ],
+      ),
+    );
+  }
+}
+
+class ProfileScreen extends StatelessWidget {
+  final UserProfile profile;
+  final VoidCallback onUpdate;
+
+  const ProfileScreen({super.key, required this.profile, required this.onUpdate});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Perfil')),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.person),
+              title: Text(profile.name.isEmpty ? "Usuário" : profile.name),
+              subtitle: Text('${profile.age} anos | ${profile.gender}'),
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.timer),
+              title: const Text('Intervalo de Injeção'),
+              trailing: Text('${profile.injectionIntervalDays} dias'),
+            ),
+          ],
+        ),
       ),
     );
   }
