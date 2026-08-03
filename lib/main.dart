@@ -10,7 +10,13 @@ import 'dart:convert';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   try {
-    await Firebase.initializeApp();
+    await Firebase.initializeApp().timeout(
+      const Duration(seconds: 3),
+      onTimeout: () {
+        debugPrint("Timeout ao inicializar o Firebase. Continuando localmente.");
+        return Firebase.app();
+      },
+    );
   } catch (e) {
     debugPrint("Erro ao inicializar Firebase: $e");
   }
@@ -191,38 +197,52 @@ class _MainAppControllerState extends State<MainAppController> {
   }
 
   Future<void> _loadStoredUserData() async {
-    final prefs = await SharedPreferences.getInstance();
-    final currentUser = FirebaseAuth.instance.currentUser;
-
-    setState(() {
-      profile.isLoggedIn = (prefs.getBool('isLoggedIn') ?? false) || (currentUser != null);
-      profile.isInitialSetupDone = prefs.getBool('isInitialSetupDone') ?? false;
-      profile.name = prefs.getString('userName') ?? (currentUser?.displayName ?? '');
-      profile.email = prefs.getString('userEmail') ?? (currentUser?.email ?? '');
-      profile.photoUrl = prefs.getString('userPhoto') ?? '';
-      profile.age = prefs.getInt('userAge') ?? 0;
-      profile.weight = prefs.getDouble('userWeight') ?? 0.0;
-      profile.height = prefs.getDouble('userHeight') ?? 0.0;
-      profile.gender = prefs.getString('userGender') ?? 'Masculino';
-      profile.goal = prefs.getString('userGoal') ?? 'Emagrecimento GLP-1';
-      profile.injectionIntervalDays = prefs.getInt('userInterval') ?? 7;
-      waterIntakeMl = prefs.getInt('waterIntake') ?? 0;
-      consumedCalories = prefs.getInt('consumedCalories') ?? 0;
-
-      final logsString = prefs.getString('injectionLogs');
-      if (logsString != null && logsString.isNotEmpty) {
-        final List decoded = jsonDecode(logsString);
-        injectionLogs = decoded.map((e) => InjectionLog.fromJson(e)).toList();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      
+      User? currentUser;
+      try {
+        currentUser = FirebaseAuth.instance.currentUser;
+      } catch (e) {
+        debugPrint("Erro ao checar FirebaseAuth: $e");
       }
 
-      final weightsString = prefs.getString('weightLogs');
-      if (weightsString != null && weightsString.isNotEmpty) {
-        final List decodedW = jsonDecode(weightsString);
-        weightLogs = decodedW.map((e) => WeightLog.fromJson(e)).toList();
-      }
+      setState(() {
+        profile.isLoggedIn = (prefs.getBool('isLoggedIn') ?? false) || (currentUser != null);
+        profile.isInitialSetupDone = prefs.getBool('isInitialSetupDone') ?? false;
+        profile.name = prefs.getString('userName') ?? (currentUser?.displayName ?? '');
+        profile.email = prefs.getString('userEmail') ?? (currentUser?.email ?? '');
+        profile.photoUrl = prefs.getString('userPhoto') ?? '';
+        profile.age = prefs.getInt('userAge') ?? 0;
+        profile.weight = prefs.getDouble('userWeight') ?? 0.0;
+        profile.height = prefs.getDouble('userHeight') ?? 0.0;
+        profile.gender = prefs.getString('userGender') ?? 'Masculino';
+        profile.goal = prefs.getString('userGoal') ?? 'Emagrecimento GLP-1';
+        profile.injectionIntervalDays = prefs.getInt('userInterval') ?? 7;
+        waterIntakeMl = prefs.getInt('waterIntake') ?? 0;
+        consumedCalories = prefs.getInt('consumedCalories') ?? 0;
 
-      _isLoading = false;
-    });
+        final logsString = prefs.getString('injectionLogs');
+        if (logsString != null && logsString.isNotEmpty) {
+          final List decoded = jsonDecode(logsString);
+          injectionLogs = decoded.map((e) => InjectionLog.fromJson(e)).toList();
+        }
+
+        final weightsString = prefs.getString('weightLogs');
+        if (weightsString != null && weightsString.isNotEmpty) {
+          final List decodedW = jsonDecode(weightsString);
+          weightLogs = decodedW.map((e) => WeightLog.fromJson(e)).toList();
+        }
+      });
+    } catch (e) {
+      debugPrint("Erro ao carregar dados locais: $e");
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   Future<void> _saveUserData() async {
@@ -252,7 +272,16 @@ class _MainAppControllerState extends State<MainAppController> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(color: Color(0xFF0061A4)),
+              SizedBox(height: 16),
+              Text("Iniciando TirzeTrack...", style: TextStyle(color: Color(0xFF0061A4))),
+            ],
+          ),
+        ),
       );
     }
 
@@ -322,7 +351,9 @@ class _MainAppControllerState extends State<MainAppController> {
       onLogout: () async {
         final prefs = await SharedPreferences.getInstance();
         await prefs.clear();
-        await FirebaseAuth.instance.signOut();
+        try {
+          await FirebaseAuth.instance.signOut();
+        } catch (_) {}
         setState(() {
           profile.isLoggedIn = false;
           profile.isInitialSetupDone = false;
@@ -983,433 +1014,4 @@ class _NutritionScreenState extends State<NutritionScreen> {
       if (responseText != null) {
         String cleanJson = responseText;
         cleanJson = cleanJson.replaceAll('```json', '');
-        cleanJson = cleanJson.replaceAll('```', '');
-        cleanJson = cleanJson.trim();
-
-        final Map<String, dynamic> data = jsonDecode(cleanJson);
-
-        final String prato = data['prato'] ?? 'Refeição Identificada';
-        final int calorias = data['calorias'] is int 
-            ? data['calorias'] 
-            : (int.tryParse(data['calorias'].toString()) ?? 300);
-        final String detalhes = data['detalhes'] ?? '';
-
-        _showAiResultModal(prato, calorias, detalhes);
-      } else {
-        _showError('Não foi possível identificar a refeição na foto.');
-      }
-    } catch (e) {
-      if (mounted) Navigator.pop(context);
-      _showError('Erro na análise de IA: $e');
-    }
-  }
-
-  void _showAiResultModal(String prato, int calorias, String detalhes) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (_capturedImage != null)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Image.file(_capturedImage!, height: 180, width: double.infinity, fit: BoxFit.cover),
-              ),
-            const SizedBox(height: 16),
-            Text(
-              prato,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              detalhes,
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.grey, fontSize: 13),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.blue.shade50,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                'Estimativa de IA: ~ $calorias kcal',
-                style: const TextStyle(color: Color(0xFF0061A4), fontWeight: FontWeight.bold, fontSize: 18),
-              ),
-            ),
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Cancelar'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: FilledButton(
-                    onPressed: () {
-                      widget.onAddCalories(calorias);
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('$calorias kcal adicionadas!')),
-                      );
-                    },
-                    child: const Text('Confirmar'),
-                  ),
-                ),
-              ],
-            )
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showError(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), backgroundColor: Colors.red),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Alimentação e Calorias')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                children: [
-                  Text('Consumido: ${widget.consumedCalories} / ${widget.dailyGoal} kcal', style: const TextStyle(fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  LinearProgressIndicator(
-                    value: widget.dailyGoal > 0 ? (widget.consumedCalories / widget.dailyGoal).clamp(0.0, 1.0) : 0.0,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          FilledButton.icon(
-            style: FilledButton.styleFrom(padding: const EdgeInsets.all(16)),
-            icon: const Icon(Icons.camera_alt),
-            label: const Text('Tirar Foto da Refeição (IA Gemini)'),
-            onPressed: _takeMealPhoto,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class InjectionsScreen extends StatefulWidget {
-  final List<InjectionLog> logs;
-  final Function(InjectionLog) onAddLog;
-
-  const InjectionsScreen({super.key, required this.logs, required this.onAddLog});
-
-  @override
-  State<InjectionsScreen> createState() => _InjectionsScreenState();
-}
-
-class _InjectionsScreenState extends State<InjectionsScreen> {
-  String selectedMed = 'Tirzepatida';
-  String selectedDose = '2.5 mg';
-  String selectedSite = 'Abdômen Direito';
-  DateTime selectedDateTime = DateTime.now();
-
-  final List<String> meds = ['Tirzepatida', 'Retatrutida', 'Semaglutida'];
-  final List<String> sites = ['Abdômen Direito', 'Abdômen Esquerdo', 'Coxa Direita', 'Coxa Esquerda', 'Braço Direito', 'Braço Esquerdo'];
-
-  Future<void> _pickDate() async {
-    final pickedDate = await showDatePicker(
-      context: context,
-      initialDate: selectedDateTime,
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2030),
-    );
-    if (pickedDate != null) {
-      setState(() {
-        selectedDateTime = DateTime(pickedDate.year, pickedDate.month, pickedDate.day, selectedDateTime.hour, selectedDateTime.minute);
-      });
-    }
-  }
-
-  Future<void> _pickTime() async {
-    final pickedTime = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.fromDateTime(selectedDateTime),
-    );
-    if (pickedTime != null) {
-      setState(() {
-        selectedDateTime = DateTime(selectedDateTime.year, selectedDateTime.month, selectedDateTime.day, pickedTime.hour, pickedTime.minute);
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Scaffold(
-      appBar: AppBar(title: const Text('Registro de Injeção')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            DropdownButtonFormField<String>(
-              isExpanded: true,
-              value: selectedMed,
-              decoration: const InputDecoration(labelText: 'Medicamento'),
-              items: meds.map((m) => DropdownMenuItem(value: m, child: Text(m, overflow: TextOverflow.ellipsis))).toList(),
-              onChanged: (v) => setState(() => selectedMed = v!),
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              initialValue: selectedDose,
-              decoration: const InputDecoration(labelText: 'Dose (ex: 2.5 mg, 0.5 mg)'),
-              onChanged: (v) => selectedDose = v,
-            ),
-            const SizedBox(height: 16),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Data e Hora da Aplicação:', style: TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            icon: const Icon(Icons.calendar_today, size: 18),
-                            label: Text('${selectedDateTime.day}/${selectedDateTime.month}/${selectedDateTime.year}'),
-                            onPressed: _pickDate,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            icon: const Icon(Icons.access_time, size: 18),
-                            label: Text('${selectedDateTime.hour.toString().padLeft(2, '0')}:${selectedDateTime.minute.toString().padLeft(2, '0')}'),
-                            onPressed: _pickTime,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Text('Local de Aplicação:', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: sites.map((site) {
-                final isSelected = selectedSite == site;
-                return ChoiceChip(
-                  label: Text(site),
-                  selected: isSelected,
-                  onSelected: (sel) {
-                    if (sel) setState(() => selectedSite = site);
-                  },
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                icon: const Icon(Icons.add),
-                label: const Text('Registrar Aplicação'),
-                style: FilledButton.styleFrom(padding: const EdgeInsets.all(16)),
-                onPressed: () {
-                  final log = InjectionLog(
-                    medication: selectedMed,
-                    dose: selectedDose,
-                    site: selectedSite,
-                    dateTime: selectedDateTime,
-                  );
-                  widget.onAddLog(log);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Aplicação registrada com sucesso!')),
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 24),
-            const Text('Histórico de Aplicações', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-            const SizedBox(height: 8),
-            widget.logs.isEmpty
-                ? const Text('Nenhuma aplicação registrada.', style: TextStyle(color: Colors.grey))
-                : ListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: widget.logs.length,
-                    itemBuilder: (context, index) {
-                      final item = widget.logs.reversed.toList()[index];
-                      return ListTile(
-                        leading: Icon(Icons.check_circle, color: theme.colorScheme.primary),
-                        title: Text('${item.medication} - ${item.dose}'),
-                        subtitle: Text('Local: ${item.site}\nData: ${item.dateTime.day}/${item.dateTime.month}/${item.dateTime.year} às ${item.dateTime.hour}:${item.dateTime.minute.toString().padLeft(2, '0')}'),
-                      );
-                    },
-                  )
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class WaterScreen extends StatelessWidget {
-  final int currentWater;
-  final int goalWater;
-  final Function(int) onAddWater;
-
-  const WaterScreen({
-    super.key,
-    required this.currentWater,
-    required this.goalWater,
-    required this.onAddWater,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Registro de Água')),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.water_drop, size: 80, color: Colors.blue.shade400),
-            const SizedBox(height: 16),
-            Text('$currentWater / $goalWater ml', style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 32),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                OutlinedButton(onPressed: () => onAddWater(200), child: const Text('+ 200 ml')),
-                OutlinedButton(onPressed: () => onAddWater(350), child: const Text('+ 350 ml')),
-                OutlinedButton(onPressed: () => onAddWater(500), child: const Text('+ 500 ml')),
-              ],
-            )
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class EvolutionScreen extends StatelessWidget {
-  final List<WeightLog> weightLogs;
-  final double currentWeight;
-  final Function(double) onAddWeight;
-
-  const EvolutionScreen({super.key, required this.weightLogs, required this.currentWeight, required this.onAddWeight});
-
-  @override
-  Widget build(BuildContext context) {
-    final controller = TextEditingController();
-    return Scaffold(
-      appBar: AppBar(title: const Text('Evolução do Peso')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text('Peso Atual: $currentWeight kg', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: controller,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Novo Peso (kg)'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              FilledButton(
-                onPressed: () {
-                  final val = double.tryParse(controller.text.replaceAll(',', '.'));
-                  if (val != null) onAddWeight(val);
-                },
-                child: const Text('Registrar'),
-              )
-            ],
-          )
-        ],
-      ),
-    );
-  }
-}
-
-class ProfileScreen extends StatelessWidget {
-  final UserProfile profile;
-  final VoidCallback onLogout;
-
-  const ProfileScreen({super.key, required this.profile, required this.onLogout});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Perfil')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            ListTile(
-              leading: profile.photoUrl.isNotEmpty
-                  ? CircleAvatar(backgroundImage: NetworkImage(profile.photoUrl))
-                  : const Icon(Icons.person, size: 40),
-              title: Text(profile.name.isEmpty ? "Usuário Local" : profile.name),
-              subtitle: Text(profile.email.isNotEmpty ? profile.email : '${profile.age} anos | ${profile.gender}'),
-            ),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.flag),
-              title: const Text('Objetivo Atual'),
-              subtitle: Text(profile.goal),
-            ),
-            ListTile(
-              leading: const Icon(Icons.timer),
-              title: const Text('Intervalo de Injeção'),
-              trailing: Text('${profile.injectionIntervalDays} dias'),
-            ),
-            const Spacer(),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
-                icon: const Icon(Icons.logout),
-                label: const Text('Sair / Resetar Conta'),
-                onPressed: onLogout,
-              ),
-            ),
-            const SizedBox(height: 16),
-          ],
-        ),
-      ),
-    );
-  }
-}
+        cleanJson = cleanJson.replaceAll('
