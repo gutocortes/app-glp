@@ -25,11 +25,6 @@ class TirzeTrackApp extends StatelessWidget {
           seedColor: const Color(0xFF0061A4),
           brightness: Brightness.light,
         ),
-        cardTheme: CardTheme(
-          elevation: 0,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          color: const Color(0xFFF0F4F9),
-        ),
         inputDecorationTheme: InputDecorationTheme(
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           filled: true,
@@ -42,7 +37,7 @@ class TirzeTrackApp extends StatelessWidget {
 }
 
 // -----------------------------------------------------------------------------
-// MODELOS DE DADOS
+// MODELOS DE DADOS E REGRA GLP-1
 // -----------------------------------------------------------------------------
 class UserProfile {
   String name;
@@ -80,7 +75,7 @@ class UserProfile {
 
   String get imcClassification {
     double val = imc;
-    if (val <= 0) return 'Não calculated';
+    if (val <= 0) return 'Não calculado';
     if (val < 18.5) return 'Abaixo do peso';
     if (val < 25.0) return 'Peso normal';
     if (val < 30.0) return 'Sobrepeso';
@@ -163,7 +158,7 @@ class WeightLog {
 }
 
 // -----------------------------------------------------------------------------
-// CONTROLADOR PRINCIPAL
+// CONTROLADOR PRINCIPAL COM PERSISTÊNCIA REAL
 // -----------------------------------------------------------------------------
 class MainAppController extends StatefulWidget {
   const MainAppController({super.key});
@@ -334,7 +329,7 @@ class _MainAppControllerState extends State<MainAppController> {
 }
 
 // -----------------------------------------------------------------------------
-// TELA DE LOGIN COM AS DUAS OPÇÕES ATIVAS
+// TELA DE LOGIN (DUAS OPÇÕES FUNCIONAIS)
 // -----------------------------------------------------------------------------
 class LoginScreen extends StatefulWidget {
   final Function(GoogleSignInAccount account) onGoogleLoginSuccess;
@@ -362,7 +357,6 @@ class _LoginScreenState extends State<LoginScreen> {
       if (account != null) {
         widget.onGoogleLoginSuccess(account);
       } else {
-        // Usuário cancelou a janela de seleção do Google
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Login com Google cancelado.')),
@@ -373,7 +367,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Não foi possível conectar com o Google no momento. Tente novamente ou utilize a Conta Local.'),
+            content: Text('Não foi possível conectar com o Google. Tente novamente ou use a Conta Local.'),
             duration: Duration(seconds: 4),
           ),
         );
@@ -415,7 +409,6 @@ class _LoginScreenState extends State<LoginScreen> {
               if (_isAuthenticating)
                 const Center(child: CircularProgressIndicator())
               else ...[
-                // Opção 1: Entrar com Google
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 16),
@@ -428,7 +421,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   onPressed: _handleGoogleSignIn,
                 ),
                 const SizedBox(height: 12),
-                // Opção 2: Entrar como Conta Local
                 FilledButton.icon(
                   style: FilledButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 16),
@@ -448,7 +440,7 @@ class _LoginScreenState extends State<LoginScreen> {
 }
 
 // -----------------------------------------------------------------------------
-// ONBOARDING
+// ONBOARDING (CONFIGURAÇÃO INICIAL)
 // -----------------------------------------------------------------------------
 class OnboardingScreen extends StatefulWidget {
   final UserProfile profile;
@@ -677,7 +669,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 }
 
 // -----------------------------------------------------------------------------
-// DASHBOARD
+// 1. DASHBOARD
 // -----------------------------------------------------------------------------
 class HomeScreen extends StatelessWidget {
   final UserProfile profile;
@@ -838,128 +830,7 @@ class HomeScreen extends StatelessWidget {
 }
 
 // -----------------------------------------------------------------------------
-// REFEIÇÃO DINÂMICA
-// -----------------------------------------------------------------------------
-class NutritionScreen extends StatefulWidget {
-  final int dailyGoal;
-  final int consumedCalories;
-  final Function(int) onAddCalories;
-
-  const NutritionScreen({
-    super.key,
-    required this.dailyGoal,
-    required this.consumedCalories,
-    required this.onAddCalories,
-  });
-
-  @override
-  State<NutritionScreen> createState() => _NutritionScreenState();
-}
-
-class _NutritionScreenState extends State<NutritionScreen> {
-  File? _capturedImage;
-  final ImagePicker _picker = ImagePicker();
-
-  final List<Map<String, dynamic>> _simulatedMeals = [
-    {'title': 'Prato Saudável com Proteína e Salada', 'calories': 380},
-    {'title': 'Omelete com Legumes e Queijo Light', 'calories': 290},
-    {'title': 'Grelhado de Frango com Arroz Integral', 'calories': 440},
-    {'title': 'Sopa Leve de Legumes com Carne', 'calories': 250},
-    {'title': 'Sanduíche Integral com Peito de Peru', 'calories': 310},
-  ];
-
-  Future<void> _takeMealPhoto() async {
-    final XFile? photo = await _picker.pickImage(source: ImageSource.camera);
-    if (photo != null) {
-      setState(() {
-        _capturedImage = File(photo.path);
-      });
-      _showAiAnalysisDialog();
-    }
-  }
-
-  void _showAiAnalysisDialog() {
-    final randomMeal = _simulatedMeals[Random().nextInt(_simulatedMeals.length)];
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (_capturedImage != null)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Image.file(_capturedImage!, height: 180, width: double.infinity, fit: BoxFit.cover),
-              ),
-            const SizedBox(height: 16),
-            const Text('Analisando Foto por IA...', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            const SizedBox(height: 12),
-            FutureBuilder(
-              future: Future.delayed(const Duration(seconds: 2), () => true),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.done) {
-                  return Column(
-                    children: [
-                      Text('IA Identificou: ${randomMeal['title']}', textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.w600)),
-                      const SizedBox(height: 8),
-                      Text('Estimativa: ~ ${randomMeal['calories']} kcal', style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold, fontSize: 18)),
-                      const SizedBox(height: 16),
-                      FilledButton(
-                        onPressed: () {
-                          widget.onAddCalories(randomMeal['calories'] as int);
-                          Navigator.pop(context);
-                        },
-                        child: Text('Confirmar e Adicionar ${randomMeal['calories']} kcal'),
-                      )
-                    ],
-                  );
-                }
-                return const CircularProgressIndicator();
-              },
-            )
-          ],
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Alimentação e Calorias')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                children: [
-                  Text('Consumido: ${widget.consumedCalories} / ${widget.dailyGoal} kcal'),
-                  const SizedBox(height: 8),
-                  LinearProgressIndicator(value: widget.dailyGoal > 0 ? (widget.consumedCalories / widget.dailyGoal).clamp(0.0, 1.0) : 0.0),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          FilledButton.icon(
-            style: FilledButton.styleFrom(padding: const EdgeInsets.all(16)),
-            icon: const Icon(Icons.camera_alt),
-            label: const Text('Tirar Foto da Refeição (IA)'),
-            onPressed: _takeMealPhoto,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// -----------------------------------------------------------------------------
-// DEMAIS TELAS E PERFIL COM LOGOUT
+// 2. INJEÇÕES
 // -----------------------------------------------------------------------------
 class InjectionsScreen extends StatefulWidget {
   final List<InjectionLog> logs;
@@ -1122,6 +993,130 @@ class _InjectionsScreenState extends State<InjectionsScreen> {
   }
 }
 
+// -----------------------------------------------------------------------------
+// 3. REFEIÇÃO DINÂMICA
+// -----------------------------------------------------------------------------
+class NutritionScreen extends StatefulWidget {
+  final int dailyGoal;
+  final int consumedCalories;
+  final Function(int) onAddCalories;
+
+  const NutritionScreen({
+    super.key,
+    required this.dailyGoal,
+    required this.consumedCalories,
+    required this.onAddCalories,
+  });
+
+  @override
+  State<NutritionScreen> createState() => _NutritionScreenState();
+}
+
+class _NutritionScreenState extends State<NutritionScreen> {
+  File? _capturedImage;
+  final ImagePicker _picker = ImagePicker();
+
+  final List<Map<String, dynamic>> _simulatedMeals = [
+    {'title': 'Prato Saúdavel com Proteína e Salada', 'calories': 380},
+    {'title': 'Omelete com Legumes e Queijo Light', 'calories': 290},
+    {'title': 'Grelhado de Frango com Arroz Integral', 'calories': 440},
+    {'title': 'Sopa Leve de Legumes com Carne', 'calories': 250},
+    {'title': 'Sanduíche Integral com Peito de Peru', 'calories': 310},
+  ];
+
+  Future<void> _takeMealPhoto() async {
+    final XFile? photo = await _picker.pickImage(source: ImageSource.camera);
+    if (photo != null) {
+      setState(() {
+        _capturedImage = File(photo.path);
+      });
+      _showAiAnalysisDialog();
+    }
+  }
+
+  void _showAiAnalysisDialog() {
+    final randomMeal = _simulatedMeals[Random().nextInt(_simulatedMeals.length)];
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_capturedImage != null)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.file(_capturedImage!, height: 180, width: double.infinity, fit: BoxFit.cover),
+              ),
+            const SizedBox(height: 16),
+            const Text('Analisando Foto por IA...', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            const SizedBox(height: 12),
+            FutureBuilder(
+              future: Future.delayed(const Duration(seconds: 2), () => true),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.done) {
+                  return Column(
+                    children: [
+                      Text('IA Identificou: ${randomMeal['title']}', textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 8),
+                      Text('Estimativa: ~ ${randomMeal['calories']} kcal', style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold, fontSize: 18)),
+                      const SizedBox(height: 16),
+                      FilledButton(
+                        onPressed: () {
+                          widget.onAddCalories(randomMeal['calories'] as int);
+                          Navigator.pop(context);
+                        },
+                        child: Text('Confirmar e Adicionar ${randomMeal['calories']} kcal'),
+                      )
+                    ],
+                  );
+                }
+                return const CircularProgressIndicator();
+              },
+            )
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Alimentação e Calorias')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                children: [
+                  Text('Consumido: ${widget.consumedCalories} / ${widget.dailyGoal} kcal'),
+                  const SizedBox(height: 8),
+                  LinearProgressIndicator(value: widget.dailyGoal > 0 ? (widget.consumedCalories / widget.dailyGoal).clamp(0.0, 1.0) : 0.0),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(padding: const EdgeInsets.all(16)),
+            icon: const Icon(Icons.camera_alt),
+            label: const Text('Tirar Foto da Refeição (IA)'),
+            onPressed: _takeMealPhoto,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// -----------------------------------------------------------------------------
+// 4. ÁGUA
+// -----------------------------------------------------------------------------
 class WaterScreen extends StatelessWidget {
   final int currentWater;
   final int goalWater;
@@ -1162,6 +1157,9 @@ class WaterScreen extends StatelessWidget {
   }
 }
 
+// -----------------------------------------------------------------------------
+// 5. EVOLUÇÃO E PERFIL
+// -----------------------------------------------------------------------------
 class EvolutionScreen extends StatelessWidget {
   final List<WeightLog> weightLogs;
   final double currentWeight;
