@@ -18,13 +18,8 @@ class TirzeTrackApp extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF0061A4), // Azul Médico / Saúde
+          seedColor: const Color(0xFF0061A4), // Azul Médico
           brightness: Brightness.light,
-        ),
-        cardTheme: CardTheme(
-          elevation: 0,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          color: const Color(0xFFF0F4F9),
         ),
         inputDecorationTheme: InputDecorationTheme(
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
@@ -72,7 +67,7 @@ class UserProfile {
 
   String get imcClassification {
     double val = imc;
-    if (val <= 0) return 'Não calculado';
+    if (val <= 0) return 'Não calculated';
     if (val < 18.5) return 'Abaixo do peso';
     if (val < 25.0) return 'Peso normal';
     if (val < 30.0) return 'Sobrepeso';
@@ -81,7 +76,7 @@ class UserProfile {
     return 'Obesidade Grau III';
   }
 
-  // Fórmula Mifflin-St Jeor (Padrão Ouro Moderno)
+  // Fórmula Mifflin-St Jeor
   double get tbm {
     if (weight <= 0 || height <= 0 || age <= 0) return 0.0;
     if (gender == 'Masculino') {
@@ -99,15 +94,14 @@ class UserProfile {
     return tbm * factor;
   }
 
-  // Meta Ajustada para Usuários de GLP-1
   double get dailyCalories {
     double base = maintenanceCalories;
     if (goal == 'Emagrecimento GLP-1') {
-      return base * 0.72; // Déficit de 28% focado em GLP-1
+      return base * 0.72;
     } else if (goal == 'Perda Gradual') {
-      return base * 0.85; // Déficit leve de 15%
+      return base * 0.85;
     }
-    return base; // Manutenção
+    return base;
   }
 }
 
@@ -204,7 +198,7 @@ class _MainAppControllerState extends State<MainAppController> {
 }
 
 // -----------------------------------------------------------------------------
-// TELA DE LOGIN COM GOOGLE NATIVO
+// TELA DE LOGIN
 // -----------------------------------------------------------------------------
 class LoginScreen extends StatefulWidget {
   final Function(String userName) onGoogleLoginSuccess;
@@ -221,9 +215,7 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final GoogleSignIn _googleSignIn = GoogleSignIn(
-    scopes: ['email'],
-  );
+  final GoogleSignIn _googleSignIn = GoogleSignIn(scopes: ['email']);
 
   Future<void> _handleGoogleSignIn() async {
     try {
@@ -237,7 +229,6 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
     } catch (error) {
-      // Caso ocorra cancelamento ou modo local
       widget.onGoogleLoginSuccess("Usuário Google");
     }
   }
@@ -300,7 +291,7 @@ class _LoginScreenState extends State<LoginScreen> {
 }
 
 // -----------------------------------------------------------------------------
-// CADASTRO INICIAL (ONBOARDING)
+// ONBOARDING
 // -----------------------------------------------------------------------------
 class OnboardingScreen extends StatefulWidget {
   final UserProfile profile;
@@ -527,7 +518,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 }
 
 // -----------------------------------------------------------------------------
-// 1. TELA INICIAL
+// DASHBOARD
 // -----------------------------------------------------------------------------
 class HomeScreen extends StatelessWidget {
   final UserProfile profile;
@@ -676,7 +667,7 @@ class HomeScreen extends StatelessWidget {
 }
 
 // -----------------------------------------------------------------------------
-// 2. REGISTRO DE INJEÇÕES
+// OUTRAS TELAS
 // -----------------------------------------------------------------------------
 class InjectionsScreen extends StatefulWidget {
   final List<InjectionLog> logs;
@@ -839,9 +830,6 @@ class _InjectionsScreenState extends State<InjectionsScreen> {
   }
 }
 
-// -----------------------------------------------------------------------------
-// 3. TELA DE REFEIÇÃO / CÂMERA
-// -----------------------------------------------------------------------------
 class NutritionScreen extends StatefulWidget {
   final int dailyGoal;
   final int consumedCalories;
@@ -948,9 +936,6 @@ class _NutritionScreenState extends State<NutritionScreen> {
   }
 }
 
-// -----------------------------------------------------------------------------
-// 4. ÁGUA
-// -----------------------------------------------------------------------------
 class WaterScreen extends StatelessWidget {
   final int currentWater;
   final int goalWater;
@@ -991,9 +976,6 @@ class WaterScreen extends StatelessWidget {
   }
 }
 
-// -----------------------------------------------------------------------------
-// 5. EVOLUÇÃO E PERFIL
-// -----------------------------------------------------------------------------
 class EvolutionScreen extends StatelessWidget {
   final List<WeightLog> weightLogs;
   final double currentWeight;
