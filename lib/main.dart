@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 import 'dart:convert';
@@ -8,6 +9,11 @@ import 'dart:math';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  try {
+    await Firebase.initializeApp();
+  } catch (e) {
+    debugPrint("Erro ao inicializar Firebase: $e");
+  }
   runApp(const TirzeTrackApp());
 }
 
@@ -76,7 +82,7 @@ class UserProfile {
 
   String get imcClassification {
     double val = imc;
-    if (val <= 0) return 'Não calculated';
+    if (val <= 0) return 'Não calculado';
     if (val < 18.5) return 'Abaixo do peso';
     if (val < 25.0) return 'Peso normal';
     if (val < 30.0) return 'Sobrepeso';
@@ -330,7 +336,7 @@ class _MainAppControllerState extends State<MainAppController> {
 }
 
 // -----------------------------------------------------------------------------
-// TELA DE LOGIN (COM O SEU WEB CLIENT ID)
+// TELA DE LOGIN
 // -----------------------------------------------------------------------------
 class LoginScreen extends StatefulWidget {
   final Function(GoogleSignInAccount account) onGoogleLoginSuccess;
