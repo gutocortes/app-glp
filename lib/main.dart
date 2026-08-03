@@ -29,6 +29,7 @@ class TirzeTrackApp extends StatelessWidget {
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           filled: true,
           fillColor: Colors.white,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
         ),
       ),
       home: const MainAppController(),
@@ -158,7 +159,7 @@ class WeightLog {
 }
 
 // -----------------------------------------------------------------------------
-// CONTROLADOR PRINCIPAL
+// CONTROLADOR PRINCIPAL COM PERSISTÊNCIA REAL
 // -----------------------------------------------------------------------------
 class MainAppController extends StatefulWidget {
   const MainAppController({super.key});
@@ -366,9 +367,9 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Não foi possível conectar com o Google. Tente novamente ou use a Conta Local.'),
-            duration: Duration(seconds: 4),
+          SnackBar(
+            content: Text('Erro ao conectar Google: $error. Use a Conta Local se desejar.'),
+            duration: const Duration(seconds: 4),
           ),
         );
       }
@@ -495,10 +496,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: DropdownButtonFormField<String>(
+                    isExpanded: true,
                     value: widget.profile.gender,
                     decoration: const InputDecoration(labelText: 'Sexo'),
                     items: ['Masculino', 'Feminino']
-                        .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+                        .map((s) => DropdownMenuItem(value: s, child: Text(s, overflow: TextOverflow.ellipsis)))
                         .toList(),
                     onChanged: (val) {
                       if (val != null) setState(() => widget.profile.gender = val);
@@ -531,12 +533,22 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
+              isExpanded: true,
               value: widget.profile.goal,
               decoration: const InputDecoration(labelText: 'Objetivo de Calorias', prefixIcon: Icon(Icons.flag_outlined)),
               items: const [
-                DropdownMenuItem(value: 'Emagrecimento GLP-1', child: Text('Emagrecimento GLP-1 (Déficit Recomendado)')),
-                DropdownMenuItem(value: 'Perda Gradual', child: Text('Perda Gradual (Déficit Leve)')),
-                DropdownMenuItem(value: 'Manutenção', child: Text('Manutenção do Peso')),
+                DropdownMenuItem(
+                  value: 'Emagrecimento GLP-1',
+                  child: Text('Emagrecimento GLP-1 (Déficit)', overflow: TextOverflow.ellipsis),
+                ),
+                DropdownMenuItem(
+                  value: 'Perda Gradual',
+                  child: Text('Perda Gradual (Déficit Leve)', overflow: TextOverflow.ellipsis),
+                ),
+                DropdownMenuItem(
+                  value: 'Manutenção',
+                  child: Text('Manutenção do Peso', overflow: TextOverflow.ellipsis),
+                ),
               ],
               onChanged: (val) {
                 if (val != null) setState(() => widget.profile.goal = val);
@@ -544,15 +556,16 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<int>(
+              isExpanded: true,
               value: widget.profile.injectionIntervalDays,
               decoration: const InputDecoration(
                 labelText: 'Frequência das Injeções',
                 prefixIcon: Icon(Icons.repeat),
               ),
               items: const [
-                DropdownMenuItem(value: 7, child: Text('A cada 7 dias (Semanal)')),
-                DropdownMenuItem(value: 14, child: Text('A cada 14 dias (Quinzenal)')),
-                DropdownMenuItem(value: 30, child: Text('A cada 30 dias (Mensal)')),
+                DropdownMenuItem(value: 7, child: Text('A cada 7 dias (Semanal)', overflow: TextOverflow.ellipsis)),
+                DropdownMenuItem(value: 14, child: Text('A cada 14 dias (Quinzenal)', overflow: TextOverflow.ellipsis)),
+                DropdownMenuItem(value: 30, child: Text('A cada 30 dias (Mensal)', overflow: TextOverflow.ellipsis)),
               ],
               onChanged: (val) {
                 if (val != null) setState(() => widget.profile.injectionIntervalDays = val);
@@ -669,7 +682,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 }
 
 // -----------------------------------------------------------------------------
-// 1. DASHBOARD
+// DASHBOARD
 // -----------------------------------------------------------------------------
 class HomeScreen extends StatelessWidget {
   final UserProfile profile;
@@ -830,171 +843,7 @@ class HomeScreen extends StatelessWidget {
 }
 
 // -----------------------------------------------------------------------------
-// 2. INJEÇÕES
-// -----------------------------------------------------------------------------
-class InjectionsScreen extends StatefulWidget {
-  final List<InjectionLog> logs;
-  final Function(InjectionLog) onAddLog;
-
-  const InjectionsScreen({super.key, required this.logs, required this.onAddLog});
-
-  @override
-  State<InjectionsScreen> createState() => _InjectionsScreenState();
-}
-
-class _InjectionsScreenState extends State<InjectionsScreen> {
-  String selectedMed = 'Tirzepatida';
-  String selectedDose = '2.5 mg';
-  String selectedSite = 'Abdômen Direito';
-  DateTime selectedDateTime = DateTime.now();
-
-  final List<String> meds = ['Tirzepatida', 'Retatrutida', 'Semaglutida'];
-  final List<String> sites = ['Abdômen Direito', 'Abdômen Esquerdo', 'Coxa Direita', 'Coxa Esquerda', 'Braço Direito', 'Braço Esquerdo'];
-
-  Future<void> _pickDate() async {
-    final pickedDate = await showDatePicker(
-      context: context,
-      initialDate: selectedDateTime,
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2030),
-    );
-    if (pickedDate != null) {
-      setState(() {
-        selectedDateTime = DateTime(pickedDate.year, pickedDate.month, pickedDate.day, selectedDateTime.hour, selectedDateTime.minute);
-      });
-    }
-  }
-
-  Future<void> _pickTime() async {
-    final pickedTime = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.fromDateTime(selectedDateTime),
-    );
-    if (pickedTime != null) {
-      setState(() {
-        selectedDateTime = DateTime(selectedDateTime.year, selectedDateTime.month, selectedDateTime.day, pickedTime.hour, pickedTime.minute);
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Scaffold(
-      appBar: AppBar(title: const Text('Registro de Injeção')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            DropdownButtonFormField<String>(
-              value: selectedMed,
-              decoration: const InputDecoration(labelText: 'Medicamento'),
-              items: meds.map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
-              onChanged: (v) => setState(() => selectedMed = v!),
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              initialValue: selectedDose,
-              decoration: const InputDecoration(labelText: 'Dose (ex: 2.5 mg, 0.5 mg)'),
-              onChanged: (v) => selectedDose = v,
-            ),
-            const SizedBox(height: 16),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Data e Hora da Aplicação:', style: TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            icon: const Icon(Icons.calendar_today, size: 18),
-                            label: Text('${selectedDateTime.day}/${selectedDateTime.month}/${selectedDateTime.year}'),
-                            onPressed: _pickDate,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            icon: const Icon(Icons.access_time, size: 18),
-                            label: Text('${selectedDateTime.hour.toString().padLeft(2, '0')}:${selectedDateTime.minute.toString().padLeft(2, '0')}'),
-                            onPressed: _pickTime,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Text('Local de Aplicação:', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: sites.map((site) {
-                final isSelected = selectedSite == site;
-                return ChoiceChip(
-                  label: Text(site),
-                  selected: isSelected,
-                  onSelected: (sel) {
-                    if (sel) setState(() => selectedSite = site);
-                  },
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                icon: const Icon(Icons.add),
-                label: const Text('Registrar Aplicação'),
-                style: FilledButton.styleFrom(padding: const EdgeInsets.all(16)),
-                onPressed: () {
-                  final log = InjectionLog(
-                    medication: selectedMed,
-                    dose: selectedDose,
-                    site: selectedSite,
-                    dateTime: selectedDateTime,
-                  );
-                  widget.onAddLog(log);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Aplicação registrada com sucesso!')),
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 24),
-            const Text('Histórico de Aplicações', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-            const SizedBox(height: 8),
-            widget.logs.isEmpty
-                ? const Text('Nenhuma aplicação registrada.', style: TextStyle(color: Colors.grey))
-                : ListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: widget.logs.length,
-                    itemBuilder: (context, index) {
-                      final item = widget.logs.reversed.toList()[index];
-                      return ListTile(
-                        leading: Icon(Icons.check_circle, color: theme.colorScheme.primary),
-                        title: Text('${item.medication} - ${item.dose}'),
-                        subtitle: Text('Local: ${item.site}\nData: ${item.dateTime.day}/${item.dateTime.month}/${item.dateTime.year} às ${item.dateTime.hour}:${item.dateTime.minute.toString().padLeft(2, '0')}'),
-                      );
-                    },
-                  )
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// -----------------------------------------------------------------------------
-// 3. REFEIÇÃO DINÂMICA
+// REFEIÇÃO DINÂMICA
 // -----------------------------------------------------------------------------
 class NutritionScreen extends StatefulWidget {
   final int dailyGoal;
@@ -1115,8 +964,170 @@ class _NutritionScreenState extends State<NutritionScreen> {
 }
 
 // -----------------------------------------------------------------------------
-// 4. ÁGUA
+// DEMAIS TELAS E PERFIL COM LOGOUT
 // -----------------------------------------------------------------------------
+class InjectionsScreen extends StatefulWidget {
+  final List<InjectionLog> logs;
+  final Function(InjectionLog) onAddLog;
+
+  const InjectionsScreen({super.key, required this.logs, required this.onAddLog});
+
+  @override
+  State<InjectionsScreen> createState() => _InjectionsScreenState();
+}
+
+class _InjectionsScreenState extends State<InjectionsScreen> {
+  String selectedMed = 'Tirzepatida';
+  String selectedDose = '2.5 mg';
+  String selectedSite = 'Abdômen Direito';
+  DateTime selectedDateTime = DateTime.now();
+
+  final List<String> meds = ['Tirzepatida', 'Retatrutida', 'Semaglutida'];
+  final List<String> sites = ['Abdômen Direito', 'Abdômen Esquerdo', 'Coxa Direita', 'Coxa Esquerda', 'Braço Direito', 'Braço Esquerdo'];
+
+  Future<void> _pickDate() async {
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: selectedDateTime,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2030),
+    );
+    if (pickedDate != null) {
+      setState(() {
+        selectedDateTime = DateTime(pickedDate.year, pickedDate.month, pickedDate.day, selectedDateTime.hour, selectedDateTime.minute);
+      });
+    }
+  }
+
+  Future<void> _pickTime() async {
+    final pickedTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(selectedDateTime),
+    );
+    if (pickedTime != null) {
+      setState(() {
+        selectedDateTime = DateTime(selectedDateTime.year, selectedDateTime.month, selectedDateTime.day, pickedTime.hour, pickedTime.minute);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Scaffold(
+      appBar: AppBar(title: const Text('Registro de Injeção')),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            DropdownButtonFormField<String>(
+              isExpanded: true,
+              value: selectedMed,
+              decoration: const InputDecoration(labelText: 'Medicamento'),
+              items: meds.map((m) => DropdownMenuItem(value: m, child: Text(m, overflow: TextOverflow.ellipsis))).toList(),
+              onChanged: (v) => setState(() => selectedMed = v!),
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              initialValue: selectedDose,
+              decoration: const InputDecoration(labelText: 'Dose (ex: 2.5 mg, 0.5 mg)'),
+              onChanged: (v) => selectedDose = v,
+            ),
+            const SizedBox(height: 16),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Data e Hora da Aplicação:', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            icon: const Icon(Icons.calendar_today, size: 18),
+                            label: Text('${selectedDateTime.day}/${selectedDateTime.month}/${selectedDateTime.year}'),
+                            onPressed: _pickDate,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            icon: const Icon(Icons.access_time, size: 18),
+                            label: Text('${selectedDateTime.hour.toString().padLeft(2, '0')}:${selectedDateTime.minute.toString().padLeft(2, '0')}'),
+                            onPressed: _pickTime,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text('Local de Aplicação:', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: sites.map((site) {
+                final isSelected = selectedSite == site;
+                return ChoiceChip(
+                  label: Text(site),
+                  selected: isSelected,
+                  onSelected: (sel) {
+                    if (sel) setState(() => selectedSite = site);
+                  },
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                icon: const Icon(Icons.add),
+                label: const Text('Registrar Aplicação'),
+                style: FilledButton.styleFrom(padding: const EdgeInsets.all(16)),
+                onPressed: () {
+                  final log = InjectionLog(
+                    medication: selectedMed,
+                    dose: selectedDose,
+                    site: selectedSite,
+                    dateTime: selectedDateTime,
+                  );
+                  widget.onAddLog(log);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Aplicação registrada com sucesso!')),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 24),
+            const Text('Histórico de Aplicações', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+            const SizedBox(height: 8),
+            widget.logs.isEmpty
+                ? const Text('Nenhuma aplicação registrada.', style: TextStyle(color: Colors.grey))
+                : ListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: widget.logs.length,
+                    itemBuilder: (context, index) {
+                      final item = widget.logs.reversed.toList()[index];
+                      return ListTile(
+                        leading: Icon(Icons.check_circle, color: theme.colorScheme.primary),
+                        title: Text('${item.medication} - ${item.dose}'),
+                        subtitle: Text('Local: ${item.site}\nData: ${item.dateTime.day}/${item.dateTime.month}/${item.dateTime.year} às ${item.dateTime.hour}:${item.dateTime.minute.toString().padLeft(2, '0')}'),
+                      );
+                    },
+                  )
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class WaterScreen extends StatelessWidget {
   final int currentWater;
   final int goalWater;
@@ -1157,9 +1168,6 @@ class WaterScreen extends StatelessWidget {
   }
 }
 
-// -----------------------------------------------------------------------------
-// 5. EVOLUÇÃO E PERFIL
-// -----------------------------------------------------------------------------
 class EvolutionScreen extends StatelessWidget {
   final List<WeightLog> weightLogs;
   final double currentWeight;
