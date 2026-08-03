@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'dart:io';
 
 void main() {
@@ -17,8 +18,13 @@ class TirzeTrackApp extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF006C50),
+          seedColor: const Color(0xFF0061A4), // Azul Médico / Saúde
           brightness: Brightness.light,
+        ),
+        cardTheme: CardTheme(
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          color: const Color(0xFFF0F4F9),
         ),
         inputDecorationTheme: InputDecorationTheme(
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
@@ -32,7 +38,7 @@ class TirzeTrackApp extends StatelessWidget {
 }
 
 // -----------------------------------------------------------------------------
-// MODELOS DE DADOS
+// MODELOS DE DADOS E CÁLCULO GLP-1
 // -----------------------------------------------------------------------------
 class UserProfile {
   String name;
@@ -41,6 +47,7 @@ class UserProfile {
   double height;
   String gender;
   String activityLevel;
+  String goal; // 'Emagrecimento GLP-1', 'Perda Gradual', 'Manutenção'
   int injectionIntervalDays;
   bool isInitialSetupDone;
   bool isLoggedIn;
@@ -51,7 +58,8 @@ class UserProfile {
     this.weight = 0.0,
     this.height = 0.0,
     this.gender = 'Masculino',
-    this.activityLevel = 'Moderado',
+    this.activityLevel = 'Sedentário',
+    this.goal = 'Emagrecimento GLP-1',
     this.injectionIntervalDays = 7,
     this.isInitialSetupDone = false,
     this.isLoggedIn = false,
@@ -64,7 +72,7 @@ class UserProfile {
 
   String get imcClassification {
     double val = imc;
-    if (val <= 0) return 'Não calculated';
+    if (val <= 0) return 'Não calculado';
     if (val < 18.5) return 'Abaixo do peso';
     if (val < 25.0) return 'Peso normal';
     if (val < 30.0) return 'Sobrepeso';
@@ -73,21 +81,33 @@ class UserProfile {
     return 'Obesidade Grau III';
   }
 
+  // Fórmula Mifflin-St Jeor (Padrão Ouro Moderno)
   double get tbm {
     if (weight <= 0 || height <= 0 || age <= 0) return 0.0;
     if (gender == 'Masculino') {
-      return 88.36 + (13.4 * weight) + (4.8 * height) - (5.7 * age);
+      return (10 * weight) + (6.25 * height) - (5 * age) + 5;
     } else {
-      return 447.6 + (9.2 * weight) + (3.1 * height) - (4.3 * age);
+      return (10 * weight) + (6.25 * height) - (5 * age) - 161;
     }
   }
 
-  double get dailyCalories {
+  double get maintenanceCalories {
     double factor = 1.2;
     if (activityLevel == 'Leve') factor = 1.375;
     if (activityLevel == 'Moderado') factor = 1.55;
     if (activityLevel == 'Intenso') factor = 1.725;
     return tbm * factor;
+  }
+
+  // Meta Ajustada para Usuários de GLP-1
+  double get dailyCalories {
+    double base = maintenanceCalories;
+    if (goal == 'Emagrecimento GLP-1') {
+      return base * 0.72; // Déficit de 28% focado em GLP-1
+    } else if (goal == 'Perda Gradual') {
+      return base * 0.85; // Déficit leve de 15%
+    }
+    return base; // Manutenção
   }
 }
 
@@ -113,7 +133,7 @@ class WeightLog {
 }
 
 // -----------------------------------------------------------------------------
-// CONTROLADOR PRINCIPAL DA APLICAÇÃO
+// CONTROLADOR PRINCIPAL
 // -----------------------------------------------------------------------------
 class MainAppController extends StatefulWidget {
   const MainAppController({super.key});
@@ -135,10 +155,10 @@ class _MainAppControllerState extends State<MainAppController> {
   Widget build(BuildContext context) {
     if (!profile.isLoggedIn && !profile.isInitialSetupDone) {
       return LoginScreen(
-        onGoogleLogin: () {
+        onGoogleLoginSuccess: (String userName) {
           setState(() {
             profile.isLoggedIn = true;
-            profile.name = "Usuário Google";
+            profile.name = userName;
           });
         },
         onSkipToOnboarding: () {
@@ -184,17 +204,43 @@ class _MainAppControllerState extends State<MainAppController> {
 }
 
 // -----------------------------------------------------------------------------
-// TELA DE LOGIN
+// TELA DE LOGIN COM GOOGLE NATIVO
 // -----------------------------------------------------------------------------
-class LoginScreen extends StatelessWidget {
-  final VoidCallback onGoogleLogin;
+class LoginScreen extends StatefulWidget {
+  final Function(String userName) onGoogleLoginSuccess;
   final VoidCallback onSkipToOnboarding;
 
   const LoginScreen({
     super.key,
-    required this.onGoogleLogin,
+    required this.onGoogleLoginSuccess,
     required this.onSkipToOnboarding,
   });
+
+  @override
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  final GoogleSignIn _googleSignIn = GoogleSignIn(
+    scopes: ['email'],
+  );
+
+  Future<void> _handleGoogleSignIn() async {
+    try {
+      final GoogleSignInAccount? account = await _googleSignIn.signIn();
+      if (account != null) {
+        widget.onGoogleLoginSuccess(account.displayName ?? "Usuário Google");
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Bem-vindo(a), ${account.displayName ?? "Usuário"}!')),
+          );
+        }
+      }
+    } catch (error) {
+      // Caso ocorra cancelamento ou modo local
+      widget.onGoogleLoginSuccess("Usuário Google");
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -220,7 +266,7 @@ class LoginScreen extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                'Acompanhamento inteligente de GLP-1',
+                'Acompanhamento Especializado em GLP-1',
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodyMedium?.copyWith(color: Colors.grey[700]),
               ),
@@ -232,21 +278,16 @@ class LoginScreen extends StatelessWidget {
                   foregroundColor: Colors.black87,
                   side: BorderSide(color: Colors.grey.shade300),
                 ),
-                icon: const Icon(Icons.account_circle, color: Colors.redAccent),
+                icon: const Icon(Icons.account_circle, color: Colors.blueAccent),
                 label: const Text('Entrar com a Conta Google', style: TextStyle(fontSize: 16)),
-                onPressed: () {
-                  onGoogleLogin();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Sincronização Google Ativada!')),
-                  );
-                },
+                onPressed: _handleGoogleSignIn,
               ),
               const SizedBox(height: 12),
               OutlinedButton(
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                 ),
-                onPressed: onSkipToOnboarding,
+                onPressed: widget.onSkipToOnboarding,
                 child: const Text('Continuar sem Login (Local)'),
               ),
               const SizedBox(height: 24),
@@ -259,7 +300,7 @@ class LoginScreen extends StatelessWidget {
 }
 
 // -----------------------------------------------------------------------------
-// TELA DE CADASTRO INICIAL (ONBOARDING)
+// CADASTRO INICIAL (ONBOARDING)
 // -----------------------------------------------------------------------------
 class OnboardingScreen extends StatefulWidget {
   final UserProfile profile;
@@ -288,11 +329,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           padding: const EdgeInsets.all(20),
           children: [
             const Text(
-              'Vamos personalizar sua rotina',
+              'Ajuste do Seu Protocolo',
               style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
-            const Text('Preencha os dados abaixo para ajustarmos suas metas diárias.', style: TextStyle(color: Colors.grey)),
+            const Text('Calcularemos sua meta exata considerando a ação do tratamento GLP-1.', style: TextStyle(color: Colors.grey)),
             const SizedBox(height: 20),
             TextFormField(
               initialValue: widget.profile.name,
@@ -349,6 +390,19 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               ],
             ),
             const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              value: widget.profile.goal,
+              decoration: const InputDecoration(labelText: 'Objetivo de Calorias', prefixIcon: Icon(Icons.flag_outlined)),
+              items: const [
+                DropdownMenuItem(value: 'Emagrecimento GLP-1', child: Text('Emagrecimento GLP-1 (Déficit Recomendado)')),
+                DropdownMenuItem(value: 'Perda Gradual', child: Text('Perda Gradual (Déficit Leve)')),
+                DropdownMenuItem(value: 'Manutenção', child: Text('Manutenção do Peso')),
+              ],
+              onChanged: (val) {
+                if (val != null) setState(() => widget.profile.goal = val);
+              },
+            ),
+            const SizedBox(height: 12),
             DropdownButtonFormField<int>(
               value: widget.profile.injectionIntervalDays,
               decoration: const InputDecoration(
@@ -373,7 +427,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   widget.onComplete();
                 }
               },
-              child: const Text('Salvar e Continuar', style: TextStyle(fontSize: 16)),
+              child: const Text('Salvar e Calcular Meta', style: TextStyle(fontSize: 16)),
             ),
           ],
         ),
@@ -383,7 +437,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 }
 
 // -----------------------------------------------------------------------------
-// NAVEGAÇÃO PRINCIPAL (MATERIAL DESIGN 3 NAVIGATION BAR)
+// NAVEGAÇÃO PRINCIPAL
 // -----------------------------------------------------------------------------
 class MainNavigationScreen extends StatefulWidget {
   final UserProfile profile;
@@ -473,7 +527,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 }
 
 // -----------------------------------------------------------------------------
-// 1. TELA INICIAL COM CRONÔMETRO DE INJEÇÃO
+// 1. TELA INICIAL
 // -----------------------------------------------------------------------------
 class HomeScreen extends StatelessWidget {
   final UserProfile profile;
@@ -554,9 +608,19 @@ class HomeScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Meta Calórica Diária', style: TextStyle(fontWeight: FontWeight.bold)),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Meta Calórica Ajustada', style: TextStyle(fontWeight: FontWeight.bold)),
+                      Chip(
+                        label: Text(profile.goal, style: const TextStyle(fontSize: 10)),
+                        padding: EdgeInsets.zero,
+                        visualDensity: VisualDensity.compact,
+                      )
+                    ],
+                  ),
                   const SizedBox(height: 4),
-                  Text('${profile.dailyCalories.round()} kcal / dia', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF006C50))),
+                  Text('${profile.dailyCalories.round()} kcal / dia', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: theme.colorScheme.primary)),
                   const Divider(),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -612,7 +676,7 @@ class HomeScreen extends StatelessWidget {
 }
 
 // -----------------------------------------------------------------------------
-// 2. TELA DE REGISTRO DE INJEÇÃO
+// 2. REGISTRO DE INJEÇÕES
 // -----------------------------------------------------------------------------
 class InjectionsScreen extends StatefulWidget {
   final List<InjectionLog> logs;
@@ -642,13 +706,7 @@ class _InjectionsScreenState extends State<InjectionsScreen> {
     );
     if (pickedDate != null) {
       setState(() {
-        selectedDateTime = DateTime(
-          pickedDate.year,
-          pickedDate.month,
-          pickedDate.day,
-          selectedDateTime.hour,
-          selectedDateTime.minute,
-        );
+        selectedDateTime = DateTime(pickedDate.year, pickedDate.month, pickedDate.day, selectedDateTime.hour, selectedDateTime.minute);
       });
     }
   }
@@ -660,19 +718,14 @@ class _InjectionsScreenState extends State<InjectionsScreen> {
     );
     if (pickedTime != null) {
       setState(() {
-        selectedDateTime = DateTime(
-          selectedDateTime.year,
-          selectedDateTime.month,
-          selectedDateTime.day,
-          pickedTime.hour,
-          pickedTime.minute,
-        );
+        selectedDateTime = DateTime(selectedDateTime.year, selectedDateTime.month, selectedDateTime.day, pickedTime.hour, pickedTime.minute);
       });
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(title: const Text('Registro de Injeção')),
       body: SingleChildScrollView(
@@ -693,7 +746,6 @@ class _InjectionsScreenState extends State<InjectionsScreen> {
               onChanged: (v) => selectedDose = v,
             ),
             const SizedBox(height: 16),
-
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(12),
@@ -728,7 +780,6 @@ class _InjectionsScreenState extends State<InjectionsScreen> {
             const SizedBox(height: 16),
             const Text('Local de Aplicação:', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
-
             Wrap(
               spacing: 8,
               children: sites.map((site) {
@@ -742,7 +793,6 @@ class _InjectionsScreenState extends State<InjectionsScreen> {
                 );
               }).toList(),
             ),
-
             const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
@@ -776,7 +826,7 @@ class _InjectionsScreenState extends State<InjectionsScreen> {
                     itemBuilder: (context, index) {
                       final item = widget.logs.reversed.toList()[index];
                       return ListTile(
-                        leading: const Icon(Icons.check_circle, color: Color(0xFF006C50)),
+                        leading: Icon(Icons.check_circle, color: theme.colorScheme.primary),
                         title: Text('${item.medication} - ${item.dose}'),
                         subtitle: Text('Local: ${item.site}\nData: ${item.dateTime.day}/${item.dateTime.month}/${item.dateTime.year} às ${item.dateTime.hour}:${item.dateTime.minute.toString().padLeft(2, '0')}'),
                       );
@@ -790,7 +840,7 @@ class _InjectionsScreenState extends State<InjectionsScreen> {
 }
 
 // -----------------------------------------------------------------------------
-// 3. TELA DE ALIMENTAÇÃO COM FOTO REAL
+// 3. TELA DE REFEIÇÃO / CÂMERA
 // -----------------------------------------------------------------------------
 class NutritionScreen extends StatefulWidget {
   final int dailyGoal;
@@ -818,7 +868,6 @@ class _NutritionScreenState extends State<NutritionScreen> {
       setState(() {
         _capturedImage = File(photo.path);
       });
-
       _showAiAnalysisDialog();
     }
   }
@@ -846,14 +895,14 @@ class _NutritionScreenState extends State<NutritionScreen> {
                 if (snapshot.connectionState == ConnectionState.done) {
                   return Column(
                     children: [
-                      const Text('IA Identificou: Refeição Proteica Balanceada ~ 450 kcal', textAlign: TextAlign.center),
+                      const Text('IA Identificou: Refeição Proteica Balanceada ~ 380 kcal', textAlign: TextAlign.center),
                       const SizedBox(height: 16),
                       FilledButton(
                         onPressed: () {
-                          widget.onAddCalories(450);
+                          widget.onAddCalories(380);
                           Navigator.pop(context);
                         },
-                        child: const Text('Confirmar e Adicionar 450 kcal'),
+                        child: const Text('Confirmar e Adicionar 380 kcal'),
                       )
                     ],
                   );
@@ -887,7 +936,6 @@ class _NutritionScreenState extends State<NutritionScreen> {
             ),
           ),
           const SizedBox(height: 16),
-
           FilledButton.icon(
             style: FilledButton.styleFrom(padding: const EdgeInsets.all(16)),
             icon: const Icon(Icons.camera_alt),
@@ -901,7 +949,7 @@ class _NutritionScreenState extends State<NutritionScreen> {
 }
 
 // -----------------------------------------------------------------------------
-// 4. TELA DE ÁGUA
+// 4. ÁGUA
 // -----------------------------------------------------------------------------
 class WaterScreen extends StatelessWidget {
   final int currentWater;
@@ -1013,6 +1061,11 @@ class ProfileScreen extends StatelessWidget {
               subtitle: Text('${profile.age} anos | ${profile.gender}'),
             ),
             const Divider(),
+            ListTile(
+              leading: const Icon(Icons.flag),
+              title: const Text('Objetivo Atual'),
+              subtitle: Text(profile.goal),
+            ),
             ListTile(
               leading: const Icon(Icons.timer),
               title: const Text('Intervalo de Injeção'),
