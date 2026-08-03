@@ -354,7 +354,7 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final GoogleSignIn _googleSignIn = GoogleSignIn(
-    serverClientId: '166700276818-db15jrqtkuo0r2g1eiltha2cnsqmm2ac.apps.googleusercontent.com',
+    serverClientId: '166700276818-m5en2oj2polmpclel60gdp6dtvdeu7as.apps.googleusercontent.com',
     scopes: ['email', 'profile'],
   );
   bool _isAuthenticating = false;
