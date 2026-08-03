@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
+import 'dart:math';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const TirzeTrackApp());
 }
 
@@ -18,7 +21,7 @@ class TirzeTrackApp extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF0061A4), // Azul Médico
+          seedColor: const Color(0xFF0061A4),
           brightness: Brightness.light,
         ),
         inputDecorationTheme: InputDecorationTheme(
@@ -33,22 +36,26 @@ class TirzeTrackApp extends StatelessWidget {
 }
 
 // -----------------------------------------------------------------------------
-// MODELOS DE DADOS E CÁLCULO GLP-1
+// MODELO DE PERFIL
 // -----------------------------------------------------------------------------
 class UserProfile {
   String name;
+  String email;
+  String photoUrl;
   int age;
   double weight;
   double height;
   String gender;
   String activityLevel;
-  String goal; // 'Emagrecimento GLP-1', 'Perda Gradual', 'Manutenção'
+  String goal;
   int injectionIntervalDays;
   bool isInitialSetupDone;
   bool isLoggedIn;
 
   UserProfile({
     this.name = '',
+    this.email = '',
+    this.photoUrl = '',
     this.age = 0,
     this.weight = 0.0,
     this.height = 0.0,
@@ -67,7 +74,7 @@ class UserProfile {
 
   String get imcClassification {
     double val = imc;
-    if (val <= 0) return 'Não calculated';
+    if (val <= 0) return 'Não calculado';
     if (val < 18.5) return 'Abaixo do peso';
     if (val < 25.0) return 'Peso normal';
     if (val < 30.0) return 'Sobrepeso';
@@ -76,7 +83,6 @@ class UserProfile {
     return 'Obesidade Grau III';
   }
 
-  // Fórmula Mifflin-St Jeor
   double get tbm {
     if (weight <= 0 || height <= 0 || age <= 0) return 0.0;
     if (gender == 'Masculino') {
@@ -127,7 +133,7 @@ class WeightLog {
 }
 
 // -----------------------------------------------------------------------------
-// CONTROLADOR PRINCIPAL
+// CONTROLADOR PRINCIPAL COM PERSISTÊNCIA (SHARED PREFERENCES)
 // -----------------------------------------------------------------------------
 class MainAppController extends StatefulWidget {
   const MainAppController({super.key});
@@ -138,6 +144,7 @@ class MainAppController extends StatefulWidget {
 
 class _MainAppControllerState extends State<MainAppController> {
   final UserProfile profile = UserProfile();
+  bool _isLoading = true;
   int waterIntakeMl = 0;
   final int waterGoalMl = 2500;
   int consumedCalories = 0;
@@ -146,19 +153,73 @@ class _MainAppControllerState extends State<MainAppController> {
   final List<WeightLog> weightLogs = [];
 
   @override
+  void initState() {
+    super.initState();
+    _loadStoredUserData();
+  }
+
+  Future<void> _loadStoredUserData() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      profile.isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
+      profile.isInitialSetupDone = prefs.getBool('isInitialSetupDone') ?? false;
+      profile.name = prefs.getString('userName') ?? '';
+      profile.email = prefs.getString('userEmail') ?? '';
+      profile.photoUrl = prefs.getString('userPhoto') ?? '';
+      profile.age = prefs.getInt('userAge') ?? 0;
+      profile.weight = prefs.getDouble('userWeight') ?? 0.0;
+      profile.height = prefs.getDouble('userHeight') ?? 0.0;
+      profile.gender = prefs.getString('userGender') ?? 'Masculino';
+      profile.goal = prefs.getString('userGoal') ?? 'Emagrecimento GLP-1';
+      profile.injectionIntervalDays = prefs.getInt('userInterval') ?? 7;
+      waterIntakeMl = prefs.getInt('waterIntake') ?? 0;
+      consumedCalories = prefs.getInt('consumedCalories') ?? 0;
+
+      _isLoading = false;
+    });
+  }
+
+  Future<void> _saveUserData() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('isLoggedIn', profile.isLoggedIn);
+    await prefs.setBool('isInitialSetupDone', profile.isInitialSetupDone);
+    await prefs.setString('userName', profile.name);
+    await prefs.setString('userEmail', profile.email);
+    await prefs.setString('userPhoto', profile.photoUrl);
+    await prefs.setInt('userAge', profile.age);
+    await prefs.setDouble('userWeight', profile.weight);
+    await prefs.setDouble('userHeight', profile.height);
+    await prefs.setString('userGender', profile.gender);
+    await prefs.setString('userGoal', profile.goal);
+    await prefs.setInt('userInterval', profile.injectionIntervalDays);
+    await prefs.setInt('waterIntake', waterIntakeMl);
+    await prefs.setInt('consumedCalories', consumedCalories);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     if (!profile.isLoggedIn && !profile.isInitialSetupDone) {
       return LoginScreen(
-        onGoogleLoginSuccess: (String userName) {
+        onGoogleLoginSuccess: (account) {
           setState(() {
             profile.isLoggedIn = true;
-            profile.name = userName;
+            profile.name = account?.displayName ?? "Usuário Google";
+            profile.email = account?.email ?? "";
+            profile.photoUrl = account?.photoUrl ?? "";
           });
+          _saveUserData();
         },
         onSkipToOnboarding: () {
           setState(() {
             profile.isLoggedIn = true;
           });
+          _saveUserData();
         },
       );
     }
@@ -173,6 +234,7 @@ class _MainAppControllerState extends State<MainAppController> {
               weightLogs.add(WeightLog(profile.weight, DateTime.now()));
             }
           });
+          _saveUserData();
         },
       );
     }
@@ -184,13 +246,30 @@ class _MainAppControllerState extends State<MainAppController> {
       consumedCalories: consumedCalories,
       injectionLogs: injectionLogs,
       weightLogs: weightLogs,
-      onUpdateWater: (val) => setState(() => waterIntakeMl = val),
-      onUpdateCalories: (val) => setState(() => consumedCalories = val),
-      onAddInjection: (log) => setState(() => injectionLogs.add(log)),
+      onUpdateWater: (val) {
+        setState(() => waterIntakeMl = val);
+        _saveUserData();
+      },
+      onUpdateCalories: (val) {
+        setState(() => consumedCalories = val);
+        _saveUserData();
+      },
+      onAddInjection: (log) {
+        setState(() => injectionLogs.add(log));
+      },
       onAddWeight: (w) {
         setState(() {
           profile.weight = w;
           weightLogs.add(WeightLog(w, DateTime.now()));
+        });
+        _saveUserData();
+      },
+      onLogout: () async {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.clear();
+        setState(() {
+          profile.isLoggedIn = false;
+          profile.isInitialSetupDone = false;
         });
       },
     );
@@ -201,7 +280,7 @@ class _MainAppControllerState extends State<MainAppController> {
 // TELA DE LOGIN
 // -----------------------------------------------------------------------------
 class LoginScreen extends StatefulWidget {
-  final Function(String userName) onGoogleLoginSuccess;
+  final Function(GoogleSignInAccount? account) onGoogleLoginSuccess;
   final VoidCallback onSkipToOnboarding;
 
   const LoginScreen({
@@ -219,17 +298,13 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _handleGoogleSignIn() async {
     try {
+      await _googleSignIn.signOut();
       final GoogleSignInAccount? account = await _googleSignIn.signIn();
       if (account != null) {
-        widget.onGoogleLoginSuccess(account.displayName ?? "Usuário Google");
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Bem-vindo(a), ${account.displayName ?? "Usuário"}!')),
-          );
-        }
+        widget.onGoogleLoginSuccess(account);
       }
     } catch (error) {
-      widget.onGoogleLoginSuccess("Usuário Google");
+      widget.onGoogleLoginSuccess(null);
     }
   }
 
@@ -442,6 +517,7 @@ class MainNavigationScreen extends StatefulWidget {
   final Function(int) onUpdateCalories;
   final Function(InjectionLog) onAddInjection;
   final Function(double) onAddWeight;
+  final VoidCallback onLogout;
 
   const MainNavigationScreen({
     super.key,
@@ -455,6 +531,7 @@ class MainNavigationScreen extends StatefulWidget {
     required this.onUpdateCalories,
     required this.onAddInjection,
     required this.onAddWeight,
+    required this.onLogout,
   });
 
   @override
@@ -495,7 +572,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       ),
       ProfileScreen(
         profile: widget.profile,
-        onUpdate: () => setState(() {}),
+        onLogout: widget.onLogout,
       ),
     ];
 
@@ -557,7 +634,19 @@ class HomeScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Olá, ${profile.name}'),
+        title: Row(
+          children: [
+            if (profile.photoUrl.isNotEmpty)
+              CircleAvatar(
+                radius: 16,
+                backgroundImage: NetworkImage(profile.photoUrl),
+              )
+            else
+              const Icon(Icons.account_circle, size: 32),
+            const SizedBox(width: 10),
+            Expanded(child: Text('Olá, ${profile.name}', overflow: TextOverflow.ellipsis)),
+          ],
+        ),
         centerTitle: false,
       ),
       body: ListView(
@@ -667,7 +756,128 @@ class HomeScreen extends StatelessWidget {
 }
 
 // -----------------------------------------------------------------------------
-// OUTRAS TELAS
+// REFEIÇÃO DINÂMICA
+// -----------------------------------------------------------------------------
+class NutritionScreen extends StatefulWidget {
+  final int dailyGoal;
+  final int consumedCalories;
+  final Function(int) onAddCalories;
+
+  const NutritionScreen({
+    super.key,
+    required this.dailyGoal,
+    required this.consumedCalories,
+    required this.onAddCalories,
+  });
+
+  @override
+  State<NutritionScreen> createState() => _NutritionScreenState();
+}
+
+class _NutritionScreenState extends State<NutritionScreen> {
+  File? _capturedImage;
+  final ImagePicker _picker = ImagePicker();
+
+  final List<Map<String, dynamic>> _simulatedMeals = [
+    {'title': 'Prato Saudável com Proteína e Salada', 'calories': 380},
+    {'title': 'Omelete com Legumes e Queijo Light', 'calories': 290},
+    {'title': 'Grelhado de Frango com Arroz Integral', 'calories': 440},
+    {'title': 'Sopa Leve de Legumes com Carne', 'calories': 250},
+    {'title': 'Sanduíche Integral com Peito de Peru', 'calories': 310},
+  ];
+
+  Future<void> _takeMealPhoto() async {
+    final XFile? photo = await _picker.pickImage(source: ImageSource.camera);
+    if (photo != null) {
+      setState(() {
+        _capturedImage = File(photo.path);
+      });
+      _showAiAnalysisDialog();
+    }
+  }
+
+  void _showAiAnalysisDialog() {
+    final randomMeal = _simulatedMeals[Random().nextInt(_simulatedMeals.length)];
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_capturedImage != null)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.file(_capturedImage!, height: 180, width: double.infinity, fit: BoxFit.cover),
+              ),
+            const SizedBox(height: 16),
+            const Text('Analisando Foto por IA...', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            const SizedBox(height: 12),
+            FutureBuilder(
+              future: Future.delayed(const Duration(seconds: 2), () => true),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.done) {
+                  return Column(
+                    children: [
+                      Text('IA Identificou: ${randomMeal['title']}', textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 8),
+                      Text('Estimativa: ~ ${randomMeal['calories']} kcal', style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold, fontSize: 18)),
+                      const SizedBox(height: 16),
+                      FilledButton(
+                        onPressed: () {
+                          widget.onAddCalories(randomMeal['calories'] as int);
+                          Navigator.pop(context);
+                        },
+                        child: Text('Confirmar e Adicionar ${randomMeal['calories']} kcal'),
+                      )
+                    ],
+                  );
+                }
+                return const CircularProgressIndicator();
+              },
+            )
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Alimentação e Calorias')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                children: [
+                  Text('Consumido: ${widget.consumedCalories} / ${widget.dailyGoal} kcal'),
+                  const SizedBox(height: 8),
+                  LinearProgressIndicator(value: widget.dailyGoal > 0 ? (widget.consumedCalories / widget.dailyGoal).clamp(0.0, 1.0) : 0.0),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(padding: const EdgeInsets.all(16)),
+            icon: const Icon(Icons.camera_alt),
+            label: const Text('Tirar Foto da Refeição (IA)'),
+            onPressed: _takeMealPhoto,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// -----------------------------------------------------------------------------
+// DEMAIS TELAS E PERFIL COM LOGOUT
 // -----------------------------------------------------------------------------
 class InjectionsScreen extends StatefulWidget {
   final List<InjectionLog> logs;
@@ -830,112 +1040,6 @@ class _InjectionsScreenState extends State<InjectionsScreen> {
   }
 }
 
-class NutritionScreen extends StatefulWidget {
-  final int dailyGoal;
-  final int consumedCalories;
-  final Function(int) onAddCalories;
-
-  const NutritionScreen({
-    super.key,
-    required this.dailyGoal,
-    required this.consumedCalories,
-    required this.onAddCalories,
-  });
-
-  @override
-  State<NutritionScreen> createState() => _NutritionScreenState();
-}
-
-class _NutritionScreenState extends State<NutritionScreen> {
-  File? _capturedImage;
-  final ImagePicker _picker = ImagePicker();
-
-  Future<void> _takeMealPhoto() async {
-    final XFile? photo = await _picker.pickImage(source: ImageSource.camera);
-    if (photo != null) {
-      setState(() {
-        _capturedImage = File(photo.path);
-      });
-      _showAiAnalysisDialog();
-    }
-  }
-
-  void _showAiAnalysisDialog() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (_capturedImage != null)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Image.file(_capturedImage!, height: 180, width: double.infinity, fit: BoxFit.cover),
-              ),
-            const SizedBox(height: 16),
-            const Text('Escaneando Foto por IA...', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            const SizedBox(height: 12),
-            FutureBuilder(
-              future: Future.delayed(const Duration(seconds: 2), () => true),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.done) {
-                  return Column(
-                    children: [
-                      const Text('IA Identificou: Refeição Proteica Balanceada ~ 380 kcal', textAlign: TextAlign.center),
-                      const SizedBox(height: 16),
-                      FilledButton(
-                        onPressed: () {
-                          widget.onAddCalories(380);
-                          Navigator.pop(context);
-                        },
-                        child: const Text('Confirmar e Adicionar 380 kcal'),
-                      )
-                    ],
-                  );
-                }
-                return const CircularProgressIndicator();
-              },
-            )
-          ],
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Alimentação e Calorias')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                children: [
-                  Text('Consumido: ${widget.consumedCalories} / ${widget.dailyGoal} kcal'),
-                  const SizedBox(height: 8),
-                  LinearProgressIndicator(value: widget.dailyGoal > 0 ? (widget.consumedCalories / widget.dailyGoal).clamp(0.0, 1.0) : 0.0),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          FilledButton.icon(
-            style: FilledButton.styleFrom(padding: const EdgeInsets.all(16)),
-            icon: const Icon(Icons.camera_alt),
-            label: const Text('Tirar Foto da Refeição (IA)'),
-            onPressed: _takeMealPhoto,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class WaterScreen extends StatelessWidget {
   final int currentWater;
   final int goalWater;
@@ -1025,9 +1129,9 @@ class EvolutionScreen extends StatelessWidget {
 
 class ProfileScreen extends StatelessWidget {
   final UserProfile profile;
-  final VoidCallback onUpdate;
+  final VoidCallback onLogout;
 
-  const ProfileScreen({super.key, required this.profile, required this.onUpdate});
+  const ProfileScreen({super.key, required this.profile, required this.onLogout});
 
   @override
   Widget build(BuildContext context) {
@@ -1038,9 +1142,11 @@ class ProfileScreen extends StatelessWidget {
         child: Column(
           children: [
             ListTile(
-              leading: const Icon(Icons.person),
+              leading: profile.photoUrl.isNotEmpty
+                  ? CircleAvatar(backgroundImage: NetworkImage(profile.photoUrl))
+                  : const Icon(Icons.person, size: 40),
               title: Text(profile.name.isEmpty ? "Usuário" : profile.name),
-              subtitle: Text('${profile.age} anos | ${profile.gender}'),
+              subtitle: Text(profile.email.isNotEmpty ? profile.email : '${profile.age} anos | ${profile.gender}'),
             ),
             const Divider(),
             ListTile(
@@ -1053,6 +1159,17 @@ class ProfileScreen extends StatelessWidget {
               title: const Text('Intervalo de Injeção'),
               trailing: Text('${profile.injectionIntervalDays} dias'),
             ),
+            const Spacer(),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
+                icon: const Icon(Icons.logout),
+                label: const Text('Sair / Resetar Conta'),
+                onPressed: onLogout,
+              ),
+            ),
+            const SizedBox(height: 16),
           ],
         ),
       ),
